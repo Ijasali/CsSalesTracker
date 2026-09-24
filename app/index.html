@@ -517,6 +517,146 @@ async function flagSchools(ids, what){
     select id, now(), 'status_change', ${lit(what === 'casa' ? 'Marked Casa only (never pitch)' : 'Marked do not contact')}, 'cs-tracker-app' from u returning id`, true);
 }
 
+/* ---------- Sync: Gmail → Supabase, the same steps as the evening agent's Step 1 and 2 ---------- */
+const FREE = /(^|\.)(gmail|googlemail|yahoo|hotmail|outlook|live|aol|ymail|icloud|me|bellnet|rogers|sympatico|msn|protonmail)\./;
+function addr(s){ const m = String(s||'').match(/<([^>]+)>/); return (m ? m[1] : String(s||'')).trim().toLowerCase(); }
+function isUs(e){ e = addr(e); return e.endsWith('@cybersquare.ca') || e === 'ijasali.m@gmail.com'; }
+function direction(m){
+  const from = addr(m.sender), subj = String(m.subject||''), text = subj + ' ' + String(m.snippet||'') + ' ' + String(m.plaintextBody||'').slice(0,600);
+  if(isUs(from)){
+    const rc = [...(m.toRecipients||[]), ...(m.ccRecipients||[])].map(addr).filter(Boolean);
+    return rc.length && rc.every(isUs) ? 'internal' : 'outbound';
+  }
+  if(/mailer-daemon|postmaster/.test(from) || /delivery status notification|undeliverable|mail delivery failed|returned mail|failure notice|delivery has failed/i.test(subj))
+    return /delay|temporar|will retry|will be retried|not yet been delivered/i.test(text) ? 'bounce_temporary' : 'bounce';
+  if(/^(accepted|declined|tentatively accepted|invitation|updated invitation|canceled event|cancelled event)\b/i.test(subj)) return 'calendar';
+  if(/out of (the )?office|automatic reply|auto[- ]?reply|autoreply|away from (the|my) office|thank you for contacting|thanks for contacting|we (have )?received your (message|email)|this is an automated/i.test(text)) return 'autoreply';
+  return 'inbound';
+}
+async function syncGmail(){
+  if(S.sync && S.sync.running) return;
+  const started = new Date().toISOString();
+  S.sync = {running:true, step:'Checking when Gmail was last synced…'}; render();
+  let runId = null;
+  try {
+    const st = await sql(`select value from sync_state where key = 'gmail_synced_through'`);
+    const since = toDate(st[0] && st[0].value) || new Date(Date.now() - 3*864e5);
+    const after = Math.floor((since.getTime() - 864e5) / 1000);
+    try { const r = await sql(`insert into agent_runs (agent) values ('app_sync') returning id`, true); runId = r[0] && r[0].id; } catch(e){}
+    // 1. every thread with activity since the last sync (minus a day, as the agent does)
+    S.sync.step = 'Looking for new emails in Gmail…'; render();
+    const ids = []; let token = '';
+    for(let page = 0; page < 10; page++){
+      const res = await gm('search_threads', Object.assign({query:`after:${after} -category:promotions -category:social -category:forums`, pageSize:50, view:'THREAD_VIEW_METADATA_ONLY'}, token ? {pageToken:token} : {}));
+      ((res && res.threads) || []).forEach(t => ids.push(t.id));
+      token = res && (res.nextPageToken || res.next_page_token); if(!token) break;
+    }
+    // 2. open each thread and classify its new messages
+    const msgs = []; let next = 0, read = 0, failedThreads = 0;
+    const worker = async () => { while(next < ids.length){ const id = ids[next++];
+      let t; try { t = await gm('get_thread', {threadId:id, messageFormat:'PLAIN_TEXT'}); } catch(e){ failedThreads++; continue; } finally { read++; S.sync.step = `Reading Gmail · ${read} of ${ids.length} conversations`; render(); }
+      (t.messages||[]).forEach(m => {
+        if(!m.date || new Date(m.date).getTime() < after*1000) return;
+        const dir = direction(m); if(dir === 'internal') return;
+        const full = dir === 'inbound' || dir === 'outbound';
+        msgs.push({id:m.id, thread:m.threadId || t.id, dir, at:m.date, from:addr(m.sender), to:(m.toRecipients||[]).map(addr), cc:(m.ccRecipients||[]).map(addr),
+          subject:m.subject||'', snippet:decodeEntities(m.snippet||'').slice(0,300), body: full ? stripQuoted(m.plaintextBody || m.snippet || '').slice(0,20000) : null,
+          files:(m.attachments||[]).map(a => a && (a.filename || a.name)).filter(Boolean)});
+      });
+    } };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    if(failedThreads) throw {code:'tool_error', server:CFG.gmail, message:`${failedThreads} conversation${failedThreads>1?'s':''} could not be opened, so the sync mark was not moved`};
+    // 3. save them (ingest_message skips anything already in the database and files each under its school)
+    const arr = a => a && a.length ? `array[${a.map(lit).join(',')}]::text[]` : 'null';
+    const results = {};
+    for(let i = 0; i < msgs.length; i += 12){
+      S.sync.step = `Saving to Supabase · ${Math.min(i+12, msgs.length)} of ${msgs.length} emails`; render();
+      const chunk = msgs.slice(i, i+12);
+      const r = await sql(`select json_build_object(${chunk.map((m,k) => `${lit('m'+k)}, ingest_message(${lit(m.id)}, ${lit(m.thread)}, ${lit(m.dir)}, ${lit(m.at)}::timestamptz, ${lit(m.from)}, ${arr(m.to)}, ${arr(m.cc)}, ${lit(m.subject)}, ${lit(m.snippet)}, ${lit(m.body)}, ${arr(m.files)})`).join(', ')}) as r`, true);
+      const o = (r[0] && r[0].r) || {}; chunk.forEach((m,k) => results[m.id] = String(o['m'+k] || ''));
+    }
+    const fresh = msgs.filter(m => results[m.id] && results[m.id] !== 'exists');
+    const unmatchedOut = fresh.filter(m => m.dir === 'outbound' && results[m.id] === 'unmatched');
+    // 4. new replies to cold outreach: same handling as the evening agent's Step 2
+    const newIn = fresh.filter(m => m.dir === 'inbound' && results[m.id] !== 'unmatched');
+    let handled = {dnc:0, engaged:0, yours:0};
+    if(newIn.length){
+      S.sync.step = 'Checking new replies…'; render();
+      const rows = await sql(`select m.gmail_message_id id, m.school_id, s.name, s.managed_by_ijas, s.stage from messages m join schools s on s.id = m.school_id where m.gmail_message_id in (${newIn.map(m => lit(m.id)).join(',')})`);
+      const cold = rows.filter(r => !r.managed_by_ijas && !['do_not_contact','closed_lost','client'].includes(r.stage));
+      handled.yours = rows.length - cold.length;
+      if(cold.length){
+        const byId = {}; newIn.forEach(m => byId[m.id] = m);
+        const verdicts = await classifyReplies(cold.map(r => ({id:r.id, school:r.name, text:(byId[r.id].body || byId[r.id].snippet || '').slice(0,1200)})));
+        const stmts = cold.map(r => {
+          const m = byId[r.id]; const v = verdicts[r.id] || {kind:'reply', summary:''};
+          const quote = String(m.body || m.snippet || '').replace(/\s+/g,' ').trim().slice(0,160);
+          if(v.kind === 'unsubscribe' || v.kind === 'not_interested'){
+            handled.dnc++;
+            return `update contacts set email_status = 'unsubscribed', updated_at = now() where lower(email) = lower(${lit(m.from)});
+              update schools set do_not_contact = true, stage = 'do_not_contact', dnc_reason = ${lit(quote)}, updated_at = now() where id = ${lit(r.school_id)};
+              insert into activities (school_id, occurred_at, kind, summary, source) values (${lit(r.school_id)}, ${lit(m.at)}::timestamptz, 'reply', ${lit((v.kind === 'unsubscribe' ? 'Asked to be removed: ' : 'Not interested: ') + (v.summary || quote))}, ${lit(m.thread)});`;
+          }
+          handled.engaged++;
+          return `update schools set stage = 'engaged', managed_by_ijas = true, status_note = ${lit(v.summary || quote)}, updated_at = now() where id = ${lit(r.school_id)};
+            insert into activities (school_id, occurred_at, kind, summary, source) values (${lit(r.school_id)}, ${lit(m.at)}::timestamptz, 'reply', ${lit('Replied: ' + (v.summary || quote))}, ${lit(m.thread)});`;
+        });
+        await sql(stmts.join('\n') + '\nselect 1 as ok', true);
+      }
+    }
+    // 5. move the sync mark forward and refresh the school totals
+    await sql(`update sync_state set value = ${lit(started)}, updated_at = now() where key = 'gmail_synced_through';
+      select recompute_school_stats() as n`, true);
+    const count = d => fresh.filter(m => m.dir === d).length;
+    const parts = [`${fresh.length} new email${fresh.length === 1 ? '' : 's'}`];
+    if(fresh.length) parts.push(`${count('inbound')} received, ${count('outbound')} sent${count('bounce') ? ', ' + count('bounce') + ' bounced' : ''}`);
+    if(handled.engaged) parts.push(`${handled.engaged} new repl${handled.engaged === 1 ? 'y' : 'ies'} moved to your pipeline`);
+    if(handled.dnc) parts.push(`${handled.dnc} marked do not contact`);
+    if(unmatchedOut.length) parts.push(`${unmatchedOut.length} sent to schools not in the database`);
+    const summary = parts.join(' · ');
+    if(runId) sql(`update agent_runs set finished_at = now(), outcome = 'ok', summary = ${lit('App sync: ' + summary + (unmatchedOut.length ? '. Unmatched: ' + unmatchedOut.map(m => m.to[0] + ' "' + m.subject + '"').join('; ') : ''))} where id = ${runId} returning id`, true).catch(() => {});
+    S.sync = {running:false, done:new Date().toISOString(), result:summary, unmatched:unmatchedOut};
+    S.gmailNew = {};
+  } catch(e){
+    const msg = errText(e, e && e.server) ;
+    if(runId) sql(`update agent_runs set finished_at = now(), outcome = 'error', summary = ${lit('App sync failed: ' + msg)} where id = ${runId} returning id`, true).catch(() => {});
+    S.sync = {running:false, error:'Sync stopped: ' + msg + ' Nothing is lost; tap Sync again. Emails already saved stay saved.'};
+  }
+  render();
+  await refreshAll();
+}
+async function classifyReplies(items){
+  const out = {};
+  const fallback = () => items.forEach(it => { const t = it.text.toLowerCase();
+    out[it.id] = {kind: /unsubscribe|remove (me|us)|take (me|us) off|stop (emailing|contacting)|do not contact/.test(t) ? 'unsubscribe' : /not interested|no thank|not at this time|not a (good )?fit|we('re| are) (all )?set|already (have|offer)/.test(t) ? 'not_interested' : 'reply', summary:''}; });
+  if(!S.sample){ fallback(); return out; }
+  try {
+    const res = await S.sample.json(`You sort replies that schools sent to Cyber Square's cold outreach emails (a coding and robotics program for schools).
+For each reply decide:
+- "unsubscribe": asks to be removed, to stop emailing, or to unsubscribe.
+- "not_interested": clearly says no, not interested, or already has a program and does not want to hear more.
+- "reply": anything else, including questions, "maybe later", "send more info", or forwarding to someone. When unsure, choose "reply".
+Also write a one-line summary (max 15 words) of what they said.
+Reply with only a JSON array of {"id": string, "kind": string, "summary": string}.
+
+${JSON.stringify(items)}`, {modelTier:'quick'});
+    (Array.isArray(res) ? res : []).forEach(r => { if(r && r.id) out[String(r.id)] = {kind:['unsubscribe','not_interested','reply'].includes(r.kind) ? r.kind : 'reply', summary:String(r.summary||'').slice(0,200)}; });
+    items.forEach(it => { if(!out[it.id]) out[it.id] = {kind:'reply', summary:''}; });
+  } catch(e){ fallback(); }
+  return out;
+}
+function syncButton(){
+  const s = S.sync || {};
+  return `<button type="button" class="btn ${s.running ? '' : 'accent'}" data-act="sync" ${s.running ? 'disabled' : ''} style="height:40px;padding:0 14px">${s.running ? '<span class="spin"></span> Syncing' : svg('refresh',16,2) + ' Sync'}</button>`;
+}
+function syncStatus(){
+  const s = S.sync; if(!s) return '';
+  if(s.running) return `<div class="banner info" role="status"><span class="spin" style="margin-top:2px"></span><span>${esc(s.step)}</span></div>`;
+  if(s.error) return `<div class="banner err" role="alert">${svg('alert',18)}<span>${esc(s.error)}</span></div>`;
+  if(s.result) return `<div class="banner info" role="status">${svg('check',18)}<span><b>Synced ${esc(rel(s.done))}.</b> ${esc(s.result)}.${s.unmatched && s.unmatched.length ? ' Not in the database: ' + esc(s.unmatched.slice(0,5).map(m => m.to[0]).join(', ')) + '.' : ''}</span></div>`;
+  return '';
+}
+
 /* ---------- rendering ---------- */
 let toastT;
 function toast(msg){ const t = $('#toast'); t.innerHTML = `<div class="toast">${esc(msg)}</div>`; clearTimeout(toastT); toastT = setTimeout(() => t.innerHTML = '', 3400); }
@@ -549,7 +689,7 @@ function syncLine(){
   const runs = (st.runs||[]); const ev = runs.find(r => r.agent === 'evening_review');
   const synced = st.synced; const age = daysSince(synced); const stale = age >= 2;
   const failed = runs.filter(r => r.outcome && !/^(ok|success|done|completed)/i.test(r.outcome));
-  let h = `<div class="banner ${stale ? 'warn' : 'info'}">${svg(stale ? 'alert' : 'db',18)}<span>Gmail synced into the database <b>${esc(rel(synced) || 'never')}</b>${ev ? ` · evening agent last ran ${esc(rel(ev.started_at))}` : ''}.${stale ? ' Replies since then are checked live in Gmail and marked “not synced yet”.' : ''}</span></div>`;
+  let h = `<div class="banner ${stale ? 'warn' : 'info'}">${svg(stale ? 'alert' : 'db',18)}<span>Gmail synced into the database <b>${esc(rel(synced) || 'never')}</b>${ev ? ` · evening agent last ran ${esc(rel(ev.started_at))}` : ''}.${stale ? ' Tap Sync to bring in everything since then.' : ''}</span></div>`;
   if(failed.length) h += `<div class="banner warn">${svg('alert',18)}<span>Last run with a problem: ${failed.map(r => esc(r.agent.replace(/_/g,' ')) + ' (' + esc(r.outcome) + ')').join(', ')}.</span></div>`;
   return h;
 }
@@ -565,7 +705,8 @@ function viewToday(){
   const n = waiting.length + due.length + (needsBatch ? 1 : 0);
   const today = new Date().toLocaleDateString('en-US',{timeZone:CFG.tz, weekday:'long', day:'numeric', month:'short'});
   let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><div class="eyebrow">Cyber Square · Sales</div><h1>${esc(today)}</h1>
-    <div class="sub">${S.busy.schools ? 'Checking the database…' : n ? `${n} thing${n>1?'s':''} need you` : 'Nothing urgent right now'}</div></div>${refreshBtn(anyBusy())}</header>`;
+    <div class="sub">${S.busy.schools ? 'Checking the database…' : n ? `${n} thing${n>1?'s':''} need you` : 'Nothing urgent right now'}</div></div>${syncButton()}</header>`;
+  h += syncStatus();
   h += sectionErr('schools','stats');
   h += `<section class="stack"><h2 class="sec">Needs you</h2>`;
   if(needsBatch){
@@ -601,7 +742,8 @@ function viewPipeline(){
   const cnt = {all:active.length}; HOT.forEach(s => cnt[s] = ls.filter(l => l.stage === s).length);
   const shown = f === 'all' ? active : ls.filter(l => l.stage === f);
   const total = ls.length || 1;
-  let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><h1>Pipeline</h1><div class="sub">Schools that replied at least once · ${cnt.all} active</div></div>${refreshBtn(S.busy.schools)}</header>`;
+  let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><h1>Pipeline</h1><div class="sub">Schools that replied at least once · ${cnt.all} active</div></div>${syncButton()}</header>`;
+  h += syncStatus();
   h += sectionErr('schools');
   h += `<div class="card stack" style="gap:8px"><div class="between xs muted"><span>Stage mix</span><span>Replied → Meeting → Proposal → Client</span></div>
     <div class="bar" style="height:10px">${HOT.map(s => cnt[s] ? `<span style="width:${cnt[s]/total*100}%;background:var(--${STAGES[s].key}-fg)"></span>` : '').join('')}</div></div>`;
@@ -919,6 +1061,7 @@ document.addEventListener('click', async ev => {
   switch(act){
     case 'tab': S.tab = k; S.lead = null; lsSet('tab', k); render(); window.scrollTo(0,0); break;
     case 'refresh': refreshAll(); break;
+    case 'sync': syncGmail(); break;
     case 'pfilter': S.pipeFilter = k; render(); break;
     case 'region': S.bankRegion = k; render(); break;
     case 'wtab': S.weekTab = k; render(); break;

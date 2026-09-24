@@ -16,8 +16,26 @@ Google Sheets are not used.
 | Lead Bank | `outreach_due` where `next_touch = 1`; counts from `schools` |
 | Sync banner | `sync_state.gmail_synced_through`, latest `agent_runs` per agent |
 
-Gmail is synced into `messages` by the evening agent. Between syncs the app also checks the
-Gmail inbox for replies from pipeline contacts and marks them "not synced yet".
+Gmail is synced into `messages` by the evening agent, and on demand by the app's **Sync** button
+(Today and Pipeline tabs). Between syncs the app also checks the Gmail inbox for replies from
+pipeline contacts and marks them "not synced yet".
+
+### What Sync does
+
+It runs the same steps as the Evening Review agent's Step 1 and Step 2:
+
+1. Reads `sync_state.gmail_synced_through` and opens every Gmail conversation with activity since
+   then (minus one day; promotions, social and forums are skipped).
+2. Classifies each message as outbound, inbound, autoreply, calendar, bounce or bounce_temporary
+   (internal mail is skipped) and saves it with `ingest_message()`, which ignores duplicates.
+3. New replies from schools the agents cold-email are handled like the agent does: Claude sorts
+   them into unsubscribe / not interested (school set to do not contact, contact unsubscribed) or
+   a real reply (stage `engaged`, `managed_by_ijas = true`, status note), each with an `activities` row.
+4. Moves `gmail_synced_through` to the time the sync started, runs `recompute_school_stats()`,
+   logs the run in `agent_runs` as `app_sync`, and reloads every screen.
+
+If any conversation cannot be read, nothing is saved and the sync mark stays put, so tapping
+Sync again is always safe.
 
 ## What the buttons write
 
@@ -28,6 +46,7 @@ Gmail inbox for replies from pipeline contacts and marks them "not synced yet".
 | Reply with Claude → Send | Gmail reply in the same thread, then `ingest_message(…, 'personal')` and `recompute_school_stats()` |
 | Save to Gmail drafts | Gmail draft + `activities` note |
 | Approve / Hold → Confirm | Replies `SEND ALL` / `SEND 1,3` / `HOLD` in the evening agent's review thread; Morning Sender v2 reads it at 9:30 am as usual |
+| Sync | `messages` (via `ingest_message`), reply handling on `schools` / `contacts` / `activities`, `sync_state`, `agent_runs` |
 | Lead Bank → Casa only / Do not contact | `schools.casa_only` or `do_not_contact`; `outreach_due` then excludes them automatically |
 
 Because every agent reads the same tables, no routine changes are needed.
