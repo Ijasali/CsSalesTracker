@@ -396,6 +396,55 @@ async function loadTodo(){
   catch(e){ S.err.todo = errText(e, CFG.supabase); }
   S.busy.todo = false; render();
 }
+const Q_DUE_DRAFTS = `
+with active as (select distinct school_id from planned_actions where status in ('planned','pending_approval','approved','held')),
+t as (select (now() at time zone 'America/Toronto')::date as d)
+select s.id, 'reply' as need, a.gmail_message_id as answers, left(coalesce(a.text,''), 160) as why
+from awaiting_our_reply a join schools s on s.id = a.school_id
+where not s.do_not_contact and s.id not in (select school_id from active)
+  and not exists (select 1 from planned_actions p where p.answers_message_id = a.gmail_message_id)
+union all
+select s.id, 'follow_up', null,
+  case when s.next_action_date is not null then 'Next action due ' || to_char(s.next_action_date, 'DD Mon') || coalesce(': ' || s.next_action, '')
+       else 'No email from us since ' || to_char(s.last_outbound, 'DD Mon') end
+from schools s, t
+where s.managed_by_ijas and not s.do_not_contact and s.stage not in ('client','closed_lost','do_not_contact')
+  and (s.next_action_date <= t.d + 1 or (s.next_action_date is null and s.last_outbound <= t.d - 10))
+  and s.id not in (select school_id from active)
+  and s.id not in (select school_id from awaiting_our_reply where school_id is not null)`;
+async function loadDue(){
+  try { S.due = await sql(Q_DUE_DRAFTS); render(); } catch(e){ S.err.due = errText(e, CFG.supabase); render(); }
+}
+async function prepareDrafts(){
+  if(S.prep && S.prep.running) return;
+  if(!S.sample){ toast('Claude drafting is not available in this view.'); return; }
+  S.prep = {running:true, step:'Finding conversations that need an email…', done:0, failed:[]}; render();
+  try {
+    await loadDue();
+    const due = S.due || [];
+    if(!due.length){ S.prep = {running:false, result:'Nothing is due. Every conversation is either waiting on the school or already has a draft.'}; return render(); }
+    const rows = (await sql(Q_SCHOOLS_BASE + ` where s.id in (${due.map(x => lit(x.id)).join(',')})`)).map(toSchool);
+    for(let i = 0; i < due.length; i++){
+      const item = due[i]; const base = rows.find(r => r.id === item.id); if(!base) continue;
+      const l = decorate(base);
+      S.prep.step = `Drafting ${i+1} of ${due.length} · ${l.school}`; render();
+      try {
+        const c = {lead:l, versions:[], idx:-1, hint:'', ask:'', lastIn:l.lastIn};
+        await fillContext(c, l);
+        if(!c.to) throw {message:'no email address'};
+        const res = await S.sample(draftPrompt(c), {cache:false});
+        const body = String(res.text||'').trim(); if(!body) throw {message:'empty draft'};
+        await insertQueued(l, c, body, 'pending_approval', item.need, item.answers, (item.need === 'reply' ? 'Reply to: ' : 'Follow-up · ') + (item.why || ''));
+        S.prep.done++;
+      } catch(e){
+        S.prep.failed.push(l.school + (e && e.code === 'not_granted' ? ' (Claude drafting was declined)' : e && e.code === 'rate_limited' ? ' (Claude usage limit reached)' : ''));
+        if(e && ['not_granted','rate_limited','sampling_disabled','session_expired'].includes(e.code)) break;
+      }
+    }
+    S.prep = {running:false, result:`${S.prep.done} draft${S.prep.done === 1 ? '' : 's'} added to Needs review.` + (S.prep.failed.length ? ` Couldn’t draft: ${S.prep.failed.join(', ')}.` : '')};
+  } catch(e){ S.prep = {running:false, error:'Stopped: ' + errText(e, CFG.supabase)}; }
+  await Promise.all([loadTodo(), loadDue()]); render();
+}
 const pendingTodo = () => (S.todo||[]).filter(t => t.status === 'pending_approval');
 /* the morning sender runs at 9:30 am Toronto time, Mon-Fri, and sends every approved email */
 function nextSendRun(){
@@ -858,7 +907,7 @@ function dayLabel(d){ if(d === TODAY) return 'Today'; if(d === addDays(TODAY,1))
   return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB',{timeZone:'UTC', weekday:'short', day:'numeric', month:'short'}); }
 function agentHealth(){
   const runs = (S.stats && S.stats.runs) || []; const ev = runs.find(r => r.agent === 'evening_prep' || r.agent === 'evening_review');
-  if(!ev) return `<div class="banner warn">${svg('alert',18)}<span>Claude’s evening prep hasn’t logged a run yet, so nothing has been drafted. Everything below is the plan it will follow; each day’s emails are drafted at 8 pm the evening before (Sun–Thu).</span></div>`;
+  if(!ev) return `<div class="banner warn">${svg('alert',18)}<span>Claude’s evening prep hasn’t logged a run yet, so nothing has been drafted. Everything below is the plan it will follow; each day’s emails are drafted at 8 pm the evening before.</span></div>`;
   if(daysSince(ev.started_at) > 3) return `<div class="banner warn">${svg('alert',18)}<span>Claude’s evening agent last ran ${esc(rel(ev.started_at))}. The plan below still applies, but nothing is being drafted until it runs again.</span></div>`;
   return '';
 }
@@ -916,10 +965,16 @@ function viewUpcoming(){
 function viewReview(){
   let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><h1>Review</h1></div>${refreshBtn(S.busy.todo)}</header>`;
   h += `<header class="stack" style="gap:4px"><div class="sub">Replies and follow-ups to schools that have replied. Approved emails go out at the next 9:30 am send (${esc(dayLabel(nextSendRun()))}); anything not approved is never sent. Drafts wait here until you decide, however long that takes.</div></header>`;
-  h += sectionErr('todo');
+  h += sectionErr('todo','due');
+  const due = S.due || []; const p = S.prep || {};
+  h += `<section class="card stack" style="gap:10px"><div class="between" style="align-items:flex-start"><span class="stack" style="gap:2px"><span class="b">Prepare drafts now</span>
+      <span class="small muted">${due.length ? `${due.length} conversation${due.length>1?'s':''} need${due.length>1?'':'s'} an email: ${esc(due.slice(0,4).map(x => ((S.schools||[]).find(sc => sc.id === x.id) || {}).school || x.id).join(', '))}${due.length > 4 ? ' and more' : ''}.` : 'Claude checks every school that has replied and drafts any reply or follow-up that’s due.'}</span></span></div>
+    <button type="button" class="btn accent full" data-act="prepare" ${p.running || !S.sample ? 'disabled' : ''}>${p.running ? '<span class="spin"></span> ' + esc(p.step) : svg('spark',16) + (due.length ? ` Draft ${due.length} email${due.length>1?'s':''} with Claude` : ' Check and draft with Claude')}</button>
+    ${p.result ? `<div class="xs" style="color:var(--won-fg)">${esc(p.result)}</div>` : ''}${p.error ? `<div class="xs" style="color:var(--bad-fg)">${esc(p.error)}</div>` : ''}
+    <div class="xs muted">Drafts land below as Needs review; nothing is sent until you approve. Claude’s evening prep also does this every day at 8 pm.</div></section>`;
   const list = S.todo;
   if(!list) return h + (S.busy.todo ? skel(3) : '');
-  if(!list.length) return h + `<div class="card empty">Nothing to review. Claude drafts replies and follow-ups each evening at 8 pm (Sun–Thu) and puts them here.</div>`;
+  if(!list.length) return h + `<div class="card empty">Nothing waiting for review right now.</div>`;
   const group = (title, rows) => rows.length ? `<h2 class="sec">${title}</h2>` + rows.map(reviewCard).join('') : '';
   h += group('Needs review', list.filter(t => t.status === 'pending_approval'));
   h += group('Held', list.filter(t => t.status === 'held'));
@@ -1107,6 +1162,14 @@ function stripQuoted(t){
 async function openComposer(l, review){
   const c = S.composer = {lead:l, review, versions:[], idx:-1, loading:true, streaming:false, hint:'', ask:'', lastIn:l.lastIn};
   render();
+  await fillContext(c, l);
+  if(review){ c.to = review.contact_email; c.subject = review.subject || c.subject; c.versions.push({text: review.body || ''}); c.idx = 0; c.loading = false; return render(); }
+  c.loading = false; render();
+  if(!S.sample){ c.error = 'Claude drafting is not available in this view. You can still write the email yourself.'; c.versions.push({text:''}); c.idx = 0; render(); return; }
+  draft(false);
+}
+/* who to write to, which message to thread under, and the conversation text Claude reads */
+async function fillContext(c, l){
   if(!S.detail[l.id]) await loadDetail(l.id);
   const d = S.detail[l.id] || {msgs:[], timeline:[]};
   const msgs = (d.msgs||[]).slice().sort((a,b) => String(a.sent_at).localeCompare(String(b.sent_at)));
@@ -1119,10 +1182,7 @@ async function openComposer(l, review){
   c.thread = msgs.map(m => `From: ${m.dir === 'outbound' ? 'Ijas (us)' : m.from_email}\nDate: ${fmtDay(m.sent_at)}\nSubject: ${m.subject||''}\n\n${stripQuoted(m.text).slice(0,2500)}`).join('\n\n-----\n\n');
   if(lastIn && lastIn.unsynced) c.thread += `\n\n-----\n\nFrom: ${lastIn.from}\nDate: ${fmtDay(lastIn.at)}\nSubject: ${lastIn.subject||''}\n\n${lastIn.text}`;
   c.notes = (d.timeline||[]).filter(t => !String(t.kind).startsWith('email:')).slice(0,8).map(t => `${fmtDay(t.at)} ${t.kind}: ${t.summary}`).join('\n');
-  if(review){ c.to = review.contact_email; c.subject = review.subject || c.subject; c.versions.push({text: review.body || ''}); c.idx = 0; c.loading = false; return render(); }
-  c.loading = false; render();
-  if(!S.sample){ c.error = 'Claude drafting is not available in this view. You can still write and send the reply yourself.'; c.versions.push({text:''}); c.idx = 0; render(); return; }
-  draft(false);
+  return c;
 }
 function draftPrompt(c){
   const l = c.lead; const extra = [c.hint, (c.ask||'').trim()].filter(Boolean).join('. ');
@@ -1171,31 +1231,32 @@ async function draft(regen){
 }
 /* Put a Claude-drafted email into the send queue (planned_actions), approved or waiting for review.
    The Morning Sender sends approved rows at 9:30 am; pending ones wait here until approved. */
+async function insertQueued(l, c, body, status, kind, answersId, why){
+  let draft = null;
+  try { draft = await gm('create_draft', Object.assign({to:[c.to], subject:c.subject, body}, c.replyTo ? {replyToMessageId:c.replyTo} : {})); } catch(e){ draft = null; }
+  const known = l.contacts.map(x => String(x.email||'').toLowerCase());
+  const contact = known.includes(String(c.to).toLowerCase()) ? c.to : (l.email || null);
+  const thread = (draft && draft.threadId) || (l.lastIn && l.lastIn.thread) || (l.lastMsg && l.lastMsg.thread) || null;
+  const approve = status === 'approved';
+  await sql(`with p as (insert into planned_actions (school_id, contact_email, planned_for, action, kind, status, draft_id, subject, body, thread_id,
+      answers_message_id, reply_to_message_id, context, created_by, reason, approved_at, approved_by)
+    values (${lit(l.id)}, ${lit(contact)}, ${lit(nextSendRun())}::date, ${lit(kind)}, ${lit(kind)}, ${lit(status)}, ${lit(draft && draft.id)}, ${lit(c.subject)}, ${lit(body)}, ${lit(thread)},
+      ${lit(answersId)}, ${lit(c.replyTo)}, ${lit(why)}, 'cs-tracker-app', ${lit(why)}, ${approve ? 'now()' : 'null'}, ${approve ? lit('Ijas (CS Tracker app)') : 'null'}) returning id, school_id)
+    insert into activities (school_id, occurred_at, kind, summary, source)
+    select school_id, now(), 'note', ${lit((approve ? 'Approved & queued in app: ' : 'Drafted for review in app: ') + c.subject)}, 'cs-tracker-app' from p returning school_id`, true);
+}
 async function queueEmail(approve){
   const c = S.composer; const l = c.lead; const body = (document.getElementById('cmp-body') || {}).value || '';
   if(!body.trim()){ c.error = 'Write something first.'; return render(); }
   if(!c.to){ c.error = 'No email address for this school.'; return render(); }
   c.busy = true; c.error = ''; render();
-  let draft = null;
-  try { draft = await gm('create_draft', Object.assign({to:[c.to], subject:c.subject, body}, c.replyTo ? {replyToMessageId:c.replyTo} : {})); } catch(e){ draft = null; }
-  const known = l.contacts.map(x => String(x.email||'').toLowerCase());
-  const contact = known.includes(String(c.to).toLowerCase()) ? c.to : (l.email || null);
   const isReply = !!(l.waiting && l.lastIn);
-  const thread = (draft && draft.threadId) || (l.lastIn && l.lastIn.thread) || (l.lastMsg && l.lastMsg.thread) || null;
-  const summary = (isReply ? 'Reply' : 'Follow-up') + ' written in app' + (c.to !== contact ? ` (to ${c.to})` : '');
-  try {
-    await sql(`with p as (insert into planned_actions (school_id, contact_email, planned_for, action, kind, status, draft_id, subject, body, thread_id,
-        answers_message_id, reply_to_message_id, context, created_by, reason, approved_at, approved_by)
-      values (${lit(l.id)}, ${lit(contact)}, ${lit(nextSendRun())}::date, ${lit(isReply ? 'reply' : 'follow_up')}, ${lit(isReply ? 'reply' : 'follow_up')},
-        ${approve ? "'approved'" : "'pending_approval'"}, ${lit(draft && draft.id)}, ${lit(c.subject)}, ${lit(body)}, ${lit(thread)},
-        ${lit(isReply ? l.lastIn.id : null)}, ${lit(c.replyTo)}, ${lit(summary)}, 'cs-tracker-app', ${lit(summary)},
-        ${approve ? 'now()' : 'null'}, ${approve ? lit('Ijas (CS Tracker app)') : 'null'}) returning id, school_id)
-      insert into activities (school_id, occurred_at, kind, summary, source)
-      select school_id, now(), 'note', ${lit((approve ? 'Approved & queued in app: ' : 'Saved for review in app: ') + c.subject)}, 'cs-tracker-app' from p returning school_id`, true);
-  } catch(e){ c.busy = false; c.error = 'Not queued. ' + errText(e, CFG.supabase); return render(); }
+  const why = (isReply ? 'Reply' : 'Follow-up') + ' written in app';
+  try { await insertQueued(l, c, body, approve ? 'approved' : 'pending_approval', isReply ? 'reply' : 'follow_up', isReply ? l.lastIn.id : null, why); }
+  catch(e){ c.busy = false; c.error = 'Not queued. ' + errText(e, CFG.supabase); return render(); }
   S.composer = null;
   toast(approve ? `Approved · sends ${dayLabel(nextSendRun())} 9:30 am` : 'Saved in Review · approve it any time');
-  await loadTodo(); render();
+  await Promise.all([loadTodo(), loadDue()]); render();
 }
 async function sendReply(asDraft){
   const c = S.composer; const l = c.lead; const body = (document.getElementById('cmp-body') || {}).value || '';
@@ -1270,6 +1331,7 @@ document.addEventListener('click', async ev => {
         if(act === 'saveapprove'){ const ok = await setApproval(t, 'approved'); if(!ok) throw {message:'This email changed since you opened it (it may already be sent or rejected).'}; }
         S.composer = null; toast(act === 'saveapprove' ? `Approved · sends ${dayLabel(nextSendRun())} 9:30 am` : 'Saved · still needs review'); await loadTodo(); }
       catch(e){ c.busy = false; c.error = 'Not saved. ' + errText(e, CFG.supabase); render(); } } break;
+    case 'prepare': prepareDrafts(); break;
     case 'queuereview': case 'queueapprove': queueEmail(act === 'queueapprove'); break;
     case 'stage': case 'note': { const l = findSchool(S.lead); if(l){ S.modal = {kind:act, lead:l}; render(); } } break;
     case 'savemodal': {
@@ -1303,7 +1365,7 @@ document.addEventListener('keydown', ev => { if(ev.key === 'Escape' && (S.compos
 /* ---------- boot ---------- */
 async function refreshAll(){
   if(!S.mcp) return;
-  await Promise.allSettled([loadSchools(), loadStats(), loadTodo(), loadBatch(), loadSchedule(), loadWeek(), loadBank()]);
+  await Promise.allSettled([loadSchools(), loadStats(), loadTodo(), loadDue(), loadBatch(), loadSchedule(), loadWeek(), loadBank()]);
   checkGmailSinceSync();
   if(S.lead) loadDetail(S.lead);
 }
