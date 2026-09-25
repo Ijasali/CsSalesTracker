@@ -11,10 +11,20 @@ Google Sheets are not used.
 |---|---|
 | Today / Pipeline | `schools` in stages engaged, meeting_booked, proposal_sent, client (or with replies), their `contacts`, and the latest `messages`. Follow-ups = our emails after the school's first reply. |
 | Lead detail | `school_timeline` (emails + activities) and `messages` |
-| Outreach → Next batch | `planned_actions` (kind `cold_auto`) for the next planned day |
-| Outreach → This week | `outreach_contacts` touched this week, plus `planned_actions` for this week |
+| Outreach → Up next | `outreach_schedule(15)`: every school due in the next 15 send days, by day. Drafted batches (`planned_actions`) show first with Approve / Hold. Tap a school for its full history. |
+| Outreach → Sent this week | `outreach_contacts` touched this week, plus `planned_actions` for this week |
 | Lead Bank | `outreach_due` where `next_touch = 1`; counts from `schools` |
 | Sync banner | `sync_state.gmail_synced_through`, latest `agent_runs` per agent |
+
+## Outreach schedule
+
+`public.outreach_schedule(p_days int default 10)` (database function) lists who will be emailed on
+each upcoming send day (Mon–Fri). It uses the same rules as `outreach_due` and the Evening Review
+agent: follow-ups first (up to 20 a day; Touch 2 seven days after Touch 1, Touch 3 fourteen days
+after Touch 2), then up to 20 new Touch 1 a day, direct emails first, at most 5 per city. Batches
+the agent has already drafted come from `planned_actions`. A projected first email also schedules
+that school's later follow-ups, so the calendar always shows whole sequences, and new Lead Finder
+schools join the queue as soon as they are added.
 
 Gmail is synced into `messages` by the evening agent, and on demand by the app's **Sync** button
 (Today and Pipeline tabs). Between syncs the app also checks the Gmail inbox for replies from

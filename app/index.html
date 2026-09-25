@@ -253,7 +253,7 @@ const S = {
   detail: {},                        // school id -> {timeline, contacts, msgs}
   gmailNew: {},                      // school id -> newest Gmail message not yet synced
   err: {}, busy: {},
-  pipeFilter:'all', bankRegion:'all', bankSel:new Set(), weekTab:'batch',
+  pipeFilter:'all', bankRegion:'all', bankSel:new Set(), weekTab:'next', sched: lsGet('sched', null), extra:{}, openDays:new Set(),
   decisions:{}, confirmDecision:false, confirmBank:'',
   lead:null, composer:null, modal:null
 };
@@ -310,7 +310,7 @@ async function sql(query, write){
 }
 
 /* ---------- queries ---------- */
-const Q_SCHOOLS = `
+const Q_SCHOOLS_BASE = `
 select s.id, s.name, s.city, s.region, s.stage, s.status_note, s.next_action, s.next_action_date, s.notes, s.managed_by_ijas,
   s.emails_sent, s.replies, s.first_contacted, s.last_outbound, s.last_inbound, s.grades, s.website,
   (select coalesce(json_agg(json_build_object('email',c.email,'first',c.first_name,'last',c.last_name,'role',c.role,'status',c.email_status,'type',c.email_type)), '[]') from contacts c where c.school_id = s.id) as contacts,
@@ -320,9 +320,12 @@ select s.id, s.name, s.city, s.region, s.stage, s.status_note, s.next_action, s.
      from messages m where m.school_id = s.id and m.direction in ('inbound','outbound') order by m.sent_at desc limit 1) as last_msg,
   (select json_build_object('id',m.gmail_message_id,'thread',m.gmail_thread_id,'at',m.sent_at,'from',m.from_email,'subject',m.subject,'text',left(coalesce(m.body,m.snippet),400))
      from messages m where m.school_id = s.id and m.direction = 'inbound' order by m.sent_at desc limit 1) as last_in
-from schools s
+from schools s`;
+const Q_SCHOOLS = Q_SCHOOLS_BASE + `
 where s.stage in ('engaged','meeting_booked','proposal_sent','client')
    or (s.replies > 0 and s.stage not in ('closed_lost','do_not_contact','bounced','no_email'))`;
+const qSchool = id => Q_SCHOOLS_BASE + ` where s.id = ${lit(id)}`;
+const Q_SCHEDULE = `select * from outreach_schedule(15)`;
 const Q_STATS = `
 select json_build_object(
   'stages', (select json_object_agg(stage, n) from (select stage, count(*) n from schools group by stage) x),
@@ -332,7 +335,7 @@ select json_build_object(
   'runs', (select coalesce(json_agg(r), '[]') from (select distinct on (agent) agent, started_at, finished_at, outcome, summary from agent_runs order by agent, started_at desc) r)
 ) as j`;
 function qBatch(){ return `
-select p.id, p.planned_for, p.review_no, p.touch, p.action, p.status, p.subject, p.body, p.reason, p.context, p.draft_id, p.contact_email, p.sent_at, p.note,
+select p.id, p.school_id, p.planned_for, p.review_no, p.touch, p.action, p.status, p.subject, p.body, p.reason, p.context, p.draft_id, p.contact_email, p.sent_at, p.note,
   s.name as school, s.city, c.first_name, c.last_name
 from planned_actions p join schools s on s.id = p.school_id left join contacts c on lower(c.email) = lower(p.contact_email)
 where p.kind = 'cold_auto' and p.planned_for = (select min(planned_for) from planned_actions where kind = 'cold_auto' and planned_for >= ${lit(TODAY)})
@@ -380,6 +383,18 @@ async function loadStats(){
   catch(e){ S.err.stats = errText(e, CFG.supabase); }
   render();
 }
+async function loadSchedule(){
+  S.busy.sched = true; delete S.err.sched; render();
+  try { S.sched = await sql(Q_SCHEDULE); lsSet('sched', S.sched); }
+  catch(e){ S.err.sched = errText(e, CFG.supabase); }
+  S.busy.sched = false; render();
+}
+async function loadOne(id){
+  try { const r = await sql(qSchool(id)); if(r[0]) S.extra[id] = toSchool(r[0]); } catch(e){ S.err.lead = errText(e, CFG.supabase); }
+  render();
+}
+function findSchool(id){ const l = leads().find(x => x.key === id); return l || (S.extra[id] ? decorate(S.extra[id]) : null); }
+function nextSends(id){ return (S.sched||[]).filter(r => r.school_id === id); }
 async function loadBatch(){
   S.busy.batch = true; delete S.err.batch; render();
   try { S.batch = await sql(qBatch()); lsSet('batch', S.batch); }
@@ -724,6 +739,9 @@ function viewToday(){
     <div class="stat"><span class="v" style="color:var(--replied-fg)">${repliesWeek}</span><span class="k">Replies</span></div>
     <div class="stat"><span class="v" style="color:var(--meeting-fg)">${stageCount('meeting_booked')}</span><span class="k">Meetings</span></div>
     <div class="stat"><span class="v" style="color:var(--proposal-fg)">${stageCount('proposal_sent')}</span><span class="k">Proposals</span></div></div></section>`;
+  const nx = (S.sched||[]); if(nx.length){ const d0 = nx[0].send_date; const n0 = nx.filter(r => r.send_date === d0);
+    h += `<button type="button" class="tap" data-act="tab" data-k="outreach"><span class="ico" style="background:var(--accent-soft);color:var(--accent-fg)">${svg('cal')}</span>
+      <span class="stack" style="gap:2px;flex:1"><span class="b">Next send · ${esc(dayLabel(d0))}</span><span class="small muted">${n0.filter(r => r.touch == 1).length} first emails · ${n0.filter(r => r.touch > 1).length} follow-ups · ${n0[0].source === 'drafted' ? 'drafted' : 'planned'}</span></span>${svg('chev',18,2)}</button>`; }
   h += `<button type="button" class="tap" data-act="tab" data-k="bank" style="background:var(--inv);color:var(--inv-ink);border-color:var(--inv)"><span class="ico" style="background:var(--inv-2);color:var(--won-fg)">${svg('db')}</span>
     <span class="stack" style="gap:2px;flex:1"><span class="b">Lead Bank · ${bankN} schools ready</span><span class="small" style="color:var(--inv-muted)">${(S.bank||[]).filter(b => b.email_type==='direct').length} direct emails · ${(S.bank||[]).filter(b => (b.sources||[]).includes('lead_finder')).length} from the Lead Finder</span></span>${svg('chev',18,2)}</button>`;
   h += syncLine();
@@ -765,20 +783,30 @@ function viewPipeline(){
 }
 
 function viewLead(){
-  const l = leads().find(x => x.key === S.lead);
-  if(!l) return `<button type="button" class="back" data-act="back">${svg('back',20,2)} Back</button><div class="card empty">This school is no longer in the pipeline.</div>`;
-  const d = S.detail[l.id]; const step = (STAGES[l.stage]||{}).step || 0;
+  const l = findSchool(S.lead);
+  const backTo = ({today:'Today', pipeline:'Pipeline', outreach:'Outreach', bank:'Lead Bank'})[S.tab] || 'Back';
+  if(!l) return `<button type="button" class="back" data-act="back">${svg('back',20,2)} ${esc(backTo)}</button>` + sectionErr('lead') + skel(3);
+  const d = S.detail[l.id]; const step = (STAGES[l.stage]||{}).step || 0; const hot = HOT.includes(l.stage);
+  const upcoming = nextSends(l.id); const drafted = (S.batch||[]).find(b => b.school_id === l.id && b.status === 'planned');
   const thread = l.lastMsg && l.lastMsg.thread;
-  let h = `<div class="between"><button type="button" class="back" data-act="back">${svg('back',20,2)} ${esc(S.tab === 'today' ? 'Today' : 'Pipeline')}</button>
+  let h = `<div class="between"><button type="button" class="back" data-act="back">${svg('back',20,2)} ${esc(backTo)}</button>
     <button type="button" class="iconbtn" data-act="reloadlead" aria-label="Refresh this school">${S.busy.lead ? '<span class="spin"></span>' : svg('refresh',18)}</button></div>`;
   h += `<header class="stack" style="gap:6px"><div class="row" style="align-items:flex-start"><div class="stack" style="gap:2px;flex:1;min-width:0"><h1 style="font-size:26px">${esc(l.school)}</h1>
     <div class="sub">${esc([l.contact, l.role, l.city].filter(Boolean).join(' · '))}</div><div class="xs muted mono" style="word-break:break-all">${esc(l.contacts.map(c => c.email).join(', '))}</div></div>${pill(l.stage)}</div></header>`;
-  h += `<section aria-label="Stage" class="stack" style="gap:6px"><div class="stagebar">${[1,2,3,4].map(i => `<i style="${i < step ? 'background:var(--ink)' : i === step ? `background:var(--${(STAGES[l.stage]||{}).key}-fg)` : ''}"></i>`).join('')}</div>
+  if(hot) h += `<section aria-label="Stage" class="stack" style="gap:6px"><div class="stagebar">${[1,2,3,4].map(i => `<i style="${i < step ? 'background:var(--ink)' : i === step ? `background:var(--${(STAGES[l.stage]||{}).key}-fg)` : ''}"></i>`).join('')}</div>
     <div class="grid4 xs muted" style="gap:4px">${['Replied','Meeting','Proposal','Client'].map((s,i) => `<span style="${i+1===step ? 'color:var(--ink);font-weight:600' : ''}">${s}</span>`).join('')}</div></section>`;
   h += `<section class="grid3"><div class="stat"><span class="k">Emails from us</span><span class="v">${l.sent}</span></div>
     <div class="stat"><span class="k">Follow-ups after reply</span><span class="v">${l.followups}</span></div>
     <div class="stat"><span class="k">Last contact</span><span class="v" style="font-size:16px;padding-top:4px">${l.lastAt ? esc(fmtDay(l.lastAt)) : '–'}</span></div></section>`;
-  if(l.waiting && l.lastIn){
+  if(upcoming.length){
+    const u = upcoming[0];
+    h += `<section class="card stack" style="background:var(--accent-soft);border-color:transparent"><span class="xs b" style="color:var(--accent-fg);letter-spacing:.06em">SCHEDULED · ${esc(dayLabel(u.send_date).toUpperCase())}</span>
+      <span class="b">${esc(touchName(u.touch))} to ${esc([[u.first_name, u.last_name].filter(Boolean).join(' '), u.email].filter(Boolean).join(' · '))}</span>
+      <span class="small muted">${u.source === 'drafted' ? 'Drafted by Claude and waiting for your approval on the Outreach tab.' : 'Claude drafts it the evening before, and it goes out at 9:30 am once you approve.'}${upcoming.length > 1 ? ' Then: ' + esc(upcoming.slice(1).map(x => touchName(x.touch) + ' ' + fmtDay(x.send_date)).join(', ')) + '.' : ''}</span>
+      ${drafted ? `<details><summary class="small b" style="cursor:pointer">${esc(drafted.subject || 'Drafted email')}</summary><div class="quote" style="white-space:pre-wrap;margin-top:8px">${esc(drafted.body || '')}</div></details>` : ''}</section>`;
+  }
+  if(!hot && !l.waiting){ /* cold school: the schedule card above is the next step */ }
+  else if(l.waiting && l.lastIn){
     h += `<section class="card stack" style="background:var(--bad-bg);border-color:transparent"><span class="xs b" style="color:var(--bad-fg);letter-spacing:.06em">REPLY WAITING · ${esc(rel(l.lastIn.at).toUpperCase())}${l.lastIn.unsynced ? ' · NOT SYNCED YET' : ''}</span>
       <span style="color:var(--ink)">“${esc(String(l.lastIn.text||'').slice(0,400))}”</span>
       <button type="button" class="btn primary full" data-act="compose" style="height:48px">${svg('spark',18)} Reply with Claude</button></section>`;
@@ -803,15 +831,65 @@ function viewLead(){
 const cap = s => { s = String(s||'').trim(); return s.charAt(0).toUpperCase() + s.slice(1); };
 
 function viewOutreach(){
-  return `<header class="stack" style="gap:12px"><div class="between"><h1>Outreach</h1>${refreshBtn(S.busy.batch || S.busy.week)}</div>
-    <div class="seg" role="tablist" aria-label="Outreach view"><button type="button" role="tab" data-act="wtab" data-k="batch" aria-selected="${S.weekTab==='batch'}">Next batch</button><button type="button" role="tab" data-act="wtab" data-k="week" aria-selected="${S.weekTab==='week'}">This week</button></div></header>`
-    + (S.weekTab === 'batch' ? viewBatch() : viewWeek());
+  return `<header class="stack" style="gap:12px"><div class="between"><h1>Outreach</h1>${refreshBtn(S.busy.sched || S.busy.batch || S.busy.week)}</div>
+    <div class="seg" role="tablist" aria-label="Outreach view"><button type="button" role="tab" data-act="wtab" data-k="next" aria-selected="${S.weekTab==='next'}">Up next</button><button type="button" role="tab" data-act="wtab" data-k="week" aria-selected="${S.weekTab==='week'}">Sent this week</button></div></header>`
+    + (S.weekTab === 'next' ? viewUpcoming() : viewWeek());
+}
+function touchName(t){ return t == 1 ? 'First email' : t == 2 ? 'Follow-up 1' : t == 3 ? 'Final follow-up' : 'Email'; }
+function dayLabel(d){ if(d === TODAY) return 'Today'; if(d === addDays(TODAY,1)) return 'Tomorrow';
+  return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB',{timeZone:'UTC', weekday:'short', day:'numeric', month:'short'}); }
+function agentHealth(){
+  const runs = (S.stats && S.stats.runs) || []; const ev = runs.find(r => r.agent === 'evening_review');
+  if(!ev) return `<div class="banner warn">${svg('alert',18)}<span>Claude’s evening agent hasn’t logged a run yet, so no batch has been drafted. Everything below is the plan it will follow; each day’s emails are drafted at 8 pm the evening before (Sun–Thu).</span></div>`;
+  if(daysSince(ev.started_at) > 3) return `<div class="banner warn">${svg('alert',18)}<span>Claude’s evening agent last ran ${esc(rel(ev.started_at))}. The plan below still applies, but nothing is being drafted until it runs again.</span></div>`;
+  return '';
+}
+function viewUpcoming(){
+  let h = sectionErr('sched','batch','review');
+  const rows = S.sched;
+  if(!rows) return h + (S.busy.sched ? skel(4) : '');
+  h += agentHealth();
+  if(!rows.length) return h + `<div class="card empty">Nobody is due. New schools from the Lead Finder (6 pm daily) appear here automatically.</div>`;
+  const days = []; const by = {};
+  rows.forEach(r => { if(!by[r.send_date]){ by[r.send_date] = []; days.push(r.send_date); } by[r.send_date].push(r); });
+  const first = days[0]; const firstRows = by[first];
+  const schools = new Set(rows.map(r => r.school_id)).size;
+  h += `<section class="card stack" style="gap:10px"><div class="between" style="align-items:baseline"><span class="stack" style="gap:0"><span class="lbl">Next send</span><span class="b" style="font-size:18px">${esc(dayLabel(first))} · 9:30 am</span></span>
+      <span class="mono b" style="font-size:22px">${firstRows.length}</span></div>
+    <div class="grid3" style="text-align:center"><span class="stack" style="gap:0"><b class="mono">${firstRows.filter(r => r.touch == 1).length}</b><span class="xs muted">First emails</span></span>
+      <span class="stack" style="gap:0"><b class="mono">${firstRows.filter(r => r.touch > 1).length}</b><span class="xs muted">Follow-ups</span></span>
+      <span class="stack" style="gap:0"><b class="mono">${schools}</b><span class="xs muted">Schools in the next ${days.length} send days</span></span></div>
+    <div class="xs muted" style="padding-top:10px;border-top:1px solid var(--line)">Claude plans this automatically: follow-ups first, then up to 20 new schools a day (direct emails first, max 5 per city). Each day is drafted at 8 pm the evening before and only goes out once you approve it.</div></section>`;
+  h += approvalBlock();
+  days.forEach((d, di) => {
+    const list = by[d].filter(r => !(r.source === 'drafted' && batchItems().some(b => b.id === r.planned_action_id)));
+    if(!list.length) return;
+    const open = S.openDays.has(d) ? di >= 2 : di < 2; const show = open ? list : [];
+    const drafted = list.some(r => r.source === 'drafted');
+    const fu = list.filter(r => r.touch > 1).length, t1 = list.length - fu;
+    h += `<section class="stack" style="gap:8px"><button type="button" class="between" data-act="day" data-k="${esc(d)}" aria-expanded="${open}" style="border:none;background:none;padding:4px 0;text-align:left;width:100%">
+        <span class="stack" style="gap:0"><span class="b">${esc(dayLabel(d))}</span><span class="xs muted">${t1 ? t1 + ' first email' + (t1>1?'s':'') : ''}${t1 && fu ? ' · ' : ''}${fu ? fu + ' follow-up' + (fu>1?'s':'') : ''} · ${drafted ? 'drafted' : 'planned'}</span></span>
+        <span class="row xs muted" style="gap:4px">${open ? 'Hide' : 'Show'} ${svg(open ? 'back' : 'chev',14,2)}</span></button>`;
+    if(open) h += `<div class="list">${show.map(r => { const who = [r.first_name, r.last_name].filter(Boolean).join(' ');
+        const key = r.touch == 1 ? 'replied' : r.touch == 2 ? 'meeting' : 'proposal';
+        const sub = r.touch == 1 ? (r.emailed_before_july ? 'Restart · emailed before July' : 'Never emailed') : 'Last email ' + fmtDay(r.last_touch_at);
+        return `<button type="button" class="row" data-act="lead" data-k="${esc(r.school_id)}" style="width:100%;text-align:left;border:none;background:var(--surface);padding:12px 16px;gap:12px;align-items:flex-start">
+          <span class="stack" style="gap:1px;flex:1;min-width:0"><span class="b small">${esc(r.school)}</span>
+          <span class="xs muted" style="word-break:break-all">${esc([who || r.email, r.city].filter(Boolean).join(' · '))}</span><span class="xs muted">${esc(sub)}</span></span>
+          <span class="pill" style="background:var(--${key}-bg);color:var(--${key}-fg)">${esc(touchName(r.touch))}</span>${svg('chev',16,2)}</button>`; }).join('')}</div>`;
+    h += `</section>`;
+  });
+  return h;
+}
+function approvalBlock(){
+  const items = batchItems(); if(!items.length) return '';
+  return `<section class="stack" style="gap:10px"><h2 class="sec">Drafted · needs your approval</h2>` + viewBatch() + `</section>`;
 }
 function viewBatch(){
   let h = sectionErr('batch','review');
   if(!S.batch) return h + (S.busy.batch ? skel(3) : '');
   const all = S.batch; const items = batchItems(); const rv = S.review;
-  if(!all.length) return h + `<div class="card empty">No batch planned yet. The evening agent plans the next one Sunday to Thursday at 8 pm.</div>`;
+  if(!all.length) return h;
   const day = all[0].planned_for;
   const done = all.filter(b => b.status !== 'planned');
   h += `<div class="small muted">Batch for <b style="color:var(--ink)">${esc(fmtDay(day))}</b> · ${all.length} emails${rv && rv.pre ? ' · pre-approved, all go out at 9:30 am unless you hold them' : ' · only what you approve goes out at 9:30 am'}${rv && rv.url ? ` · <a href="${esc(rv.url)}" target="_blank" rel="noopener">review email</a>` : ''}</div>`;
@@ -821,7 +899,7 @@ function viewBatch(){
   h += items.map(b => { const n = b.review_no; const d = S.decisions[n]; const ok = d === 'ok', held = d === 'held';
     const who = [b.first_name, b.last_name].filter(Boolean).join(' ');
     return `<article class="card stack" style="${ok ? 'border-color:var(--won-fg)' : ''}${held ? ';opacity:.6' : ''}">
-      <div class="between" style="align-items:flex-start"><span class="stack" style="gap:1px;min-width:0"><span class="xs b muted">#${esc(n)} · Touch ${esc(b.touch || '?')}</span><span class="b">${esc(b.school)}</span>
+      <div class="between" style="align-items:flex-start"><span class="stack" style="gap:1px;min-width:0"><span class="xs b muted">#${esc(n)} · Touch ${esc(b.touch || '?')}</span><button type="button" class="b" data-act="lead" data-k="${esc(b.school_id)}" style="border:none;background:none;padding:0;text-align:left;color:var(--accent-fg)">${esc(b.school)} ›</button>
       <span class="small muted" style="word-break:break-all">${esc([who, b.contact_email].filter(Boolean).join(' · '))}</span></span>
       <span class="pill" style="background:var(--${ok ? 'won' : held ? 'neutral' : 'proposal'}-bg);color:var(--${ok ? 'won' : held ? 'neutral' : 'proposal'}-fg)">${ok ? 'Approved' : held ? 'Held' : 'Waiting'}</span></div>
       ${b.reason || b.context ? `<div class="xs muted">${esc(b.reason || b.context)}</div>` : ''}
@@ -900,7 +978,7 @@ function renderActionbar(){
     a.innerHTML = `<div class="actionbar"><div class="in" style="flex-wrap:wrap"><span class="stack" style="gap:0;flex:1;min-width:120px"><span class="b small">${S.bankSel.size} selected</span><span class="xs" style="opacity:.85">${c ? 'Tap again to confirm' : 'The agents will never email these'}</span></span>
       <button type="button" class="btn" data-act="flag" data-k="casa" ${S.busy.flag ? 'disabled' : ''}>${c === 'casa' ? 'Confirm Casa only' : 'Casa only'}</button>
       <button type="button" class="btn" data-act="flag" data-k="dnc" ${S.busy.flag ? 'disabled' : ''}>${c === 'dnc' ? 'Confirm' : 'Do not contact'}</button></div></div>`;
-  } else if(!S.lead && S.tab === 'outreach' && S.weekTab === 'batch' && batchItems().length && S.review && S.review.messageId && !S.review.decision){
+  } else if(!S.lead && S.tab === 'outreach' && S.weekTab === 'next' && batchItems().length && S.review && S.review.messageId && !S.review.decision){
     const txt = decisionText(); const rv = S.review; const items = batchItems();
     const nOk = items.filter(b => S.decisions[b.review_no] === 'ok').length; const nHeld = items.length - nOk;
     const label = S.confirmDecision ? `Reply “${txt}” to the agent` : 'Confirm';
@@ -1050,7 +1128,7 @@ async function sendReply(asDraft){
   } catch(e){ logged = false; }
   S.composer = null;
   toast(asDraft ? 'Saved to Gmail drafts' : logged ? `Sent to ${c.to}` : `Sent to ${c.to}. The evening agent will add it to the database.`);
-  if(!asDraft){ delete S.gmailNew[l.id]; await Promise.all([loadSchools(), loadDetail(l.id)]); }
+  if(!asDraft){ delete S.gmailNew[l.id]; await Promise.all([loadSchools(), loadDetail(l.id), S.extra[l.id] ? loadOne(l.id) : null]); }
   render();
 }
 
@@ -1065,17 +1143,18 @@ document.addEventListener('click', async ev => {
     case 'pfilter': S.pipeFilter = k; render(); break;
     case 'region': S.bankRegion = k; render(); break;
     case 'wtab': S.weekTab = k; render(); break;
-    case 'lead': S.lead = k; render(); window.scrollTo(0,0); loadDetail(k); break;
+    case 'lead': S.lead = k; render(); window.scrollTo(0,0); if(!leads().some(x => x.key === k)) loadOne(k); loadDetail(k); break;
+    case 'day': S.openDays.has(k) ? S.openDays.delete(k) : S.openDays.add(k); render(); break;
     case 'back': S.lead = null; render(); break;
-    case 'reloadlead': if(S.lead){ loadSchools(); loadDetail(S.lead); } break;
-    case 'compose': { const l = leads().find(x => x.key === S.lead); if(l) openComposer(l); } break;
+    case 'reloadlead': if(S.lead){ loadSchools(); if(S.extra[S.lead]) loadOne(S.lead); loadDetail(S.lead); } break;
+    case 'compose': { const l = findSchool(S.lead); if(l) openComposer(l); } break;
     case 'closeov': S.composer = null; S.modal = null; render(); break;
     case 'ver': { const c = S.composer; c.idx = Math.max(0, Math.min(c.versions.length-1, c.idx + (+k))); c.confirm = false; render(); } break;
     case 'hint': { const c = S.composer; c.ask = (document.getElementById('cmp-ask')||{}).value || c.ask; c.hint = c.hint === k ? '' : k; render(); } break;
     case 'regen': { const c = S.composer; c.ask = (document.getElementById('cmp-ask')||{}).value || ''; draft(true); } break;
     case 'sendreply': sendReply(false); break;
     case 'savedraft': sendReply(true); break;
-    case 'stage': case 'note': { const l = leads().find(x => x.key === S.lead); if(l){ S.modal = {kind:act, lead:l}; render(); } } break;
+    case 'stage': case 'note': { const l = findSchool(S.lead); if(l){ S.modal = {kind:act, lead:l}; render(); } } break;
     case 'savemodal': {
       const m = S.modal; const note = ($('#md-note')||{}).value.trim(); const nextA = ($('#md-next')||{}).value.trim(); const nextD = ($('#md-date')||{}).value;
       const stage = m.kind === 'stage' ? $('#md-status').value : '';
@@ -1085,7 +1164,7 @@ document.addEventListener('click', async ev => {
         if(m.kind === 'stage') await setStage(m.lead, stage, nextA, nextD && nextD !== m.lead.next ? nextD : '', note);
         else await addNote(m.lead, note, nextA, nextD && nextD !== m.lead.next ? nextD : '');
         S.modal = null; toast('Saved to the database');
-        await Promise.all([loadSchools(), loadDetail(m.lead.id), loadStats()]);
+        await Promise.all([loadSchools(), loadDetail(m.lead.id), loadStats(), loadSchedule(), S.extra[m.lead.id] ? loadOne(m.lead.id) : null]);
       } catch(e){ m.busy = false; toast('Not saved. ' + errText(e, CFG.supabase)); }
       render(); } break;
     case 'dec': { const n = k; if(S.decisions[n] === el.dataset.v) S.decisions[n] = S.review && S.review.pre ? 'ok' : ''; else S.decisions[n] = el.dataset.v; S.confirmDecision = false; render(); } break;
@@ -1116,7 +1195,7 @@ document.addEventListener('keydown', ev => { if(ev.key === 'Escape' && (S.compos
 /* ---------- boot ---------- */
 async function refreshAll(){
   if(!S.mcp) return;
-  await Promise.allSettled([loadSchools(), loadStats(), loadBatch(), loadWeek(), loadBank()]);
+  await Promise.allSettled([loadSchools(), loadStats(), loadBatch(), loadSchedule(), loadWeek(), loadBank()]);
   checkGmailSinceSync();
   if(S.lead) loadDetail(S.lead);
 }
