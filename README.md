@@ -2,7 +2,7 @@
 
 A mobile tracker for Cyber Square's school outreach. It runs as a private Claude artifact
 (`app/index.html`) and uses the **Supabase database as the only source of truth** — the same
-database the Claude agents (Lead Finder v2, Evening Review v2, Morning Sender v2, Nightly Backup) use.
+database the Claude agents (Lead Finder v2, Evening Prep, Morning Sender v2, Nightly Backup) use.
 Google Sheets are not used.
 
 ## Where each screen gets its data (Supabase project `abylyjqplyxrpexwyufi`)
@@ -11,10 +11,28 @@ Google Sheets are not used.
 |---|---|
 | Today / Pipeline | `schools` in stages engaged, meeting_booked, proposal_sent, client (or with replies), their `contacts`, and the latest `messages`. Follow-ups = our emails after the school's first reply. |
 | Lead detail | `school_timeline` (emails + activities) and `messages` |
-| Outreach → Up next | `outreach_schedule(15)` grouped into batches: each send day has a **First emails** batch and a **Follow-ups** batch (follow-up 1 + final). Tap a batch for its schools, the email they get (`email_templates` touch*_v2, or the drafted email from `planned_actions`) and Approve / Hold. Tap a school for its full history. |
+| Outreach → Review | `planned_actions` kind `reply` / `follow_up` with status `pending_approval`, `held` or `approved` |
+| Outreach → Up next | `outreach_schedule(15)` grouped into batches: each send day has a **First emails** batch and a **Follow-ups** batch (follow-up 1 + final), all pre-approved cold outreach. Tap a batch for its schools and the email they get; tap a school for its full history. |
 | Outreach → Sent this week | `outreach_contacts` touched this week, plus `planned_actions` for this week |
 | Lead Bank | `outreach_due` where `next_touch = 1`; counts from `schools` |
 | Sync banner | `sync_state.gmail_synced_through`, latest `agent_runs` per agent |
+
+## Approval rule
+
+- A school that has **ever replied** (or is in an active conversation, `managed_by_ijas`): every email to it
+  (replies, follow-ups, scheduled next steps) is drafted by Evening Prep as `planned_actions`
+  kind `reply` / `follow_up` with status `pending_approval`. It shows in the app's **Review** list with a
+  **Needs review** badge and is never sent until approved in the app.
+- A school that has **never replied**: cold outreach (kind `cold_auto`) is inserted as `approved` and shows as
+  **Pre-approved**; it sends automatically on schedule.
+- Morning Sender v2 (9:30 am, Mon–Fri) sends only rows with status `approved`. There is no email-based review.
+
+| Badge | Meaning (`planned_actions.status`) |
+|---|---|
+| Needs review | `pending_approval`: waiting for you |
+| Approved | `approved` reply / follow-up you approved in the app (`approved_by`, `approved_at` set) |
+| Pre-approved | `approved` cold outreach, or cold outreach still to be drafted |
+| Held / Rejected / Sent / Skipped | the matching status |
 
 ## Outreach schedule
 
@@ -55,7 +73,10 @@ Sync again is always safe.
 | Add note | `activities` row (`note`), optional `next_action(_date)` |
 | Reply with Claude → Send | Gmail reply in the same thread, then `ingest_message(…, 'personal')` and `recompute_school_stats()` |
 | Save to Gmail drafts | Gmail draft + `activities` note |
-| Approve / Hold → Confirm | Replies `SEND ALL` / `SEND 1,3` / `HOLD` in the evening agent's review thread; Morning Sender v2 reads it at 9:30 am as usual |
+| Review → Approve | `planned_actions.status = 'approved'`, `approved_by`, `approved_at` (+ `activities` note) |
+| Review → Undo approval / Don't send | status back to `pending_approval` / `rejected` |
+| Review → Edit with Claude → Save | `planned_actions.subject/body` and the Gmail draft (`update_draft`; if that fails, `draft_id` is cleared so the sender rebuilds the email from the saved text) |
+| Batch → Hold this one / Release | cold `planned_actions` row `approved` ↔ `held` |
 | Sync | `messages` (via `ingest_message`), reply handling on `schools` / `contacts` / `activities`, `sync_state`, `agent_runs` |
 | Lead Bank → Casa only / Do not contact | `schools.casa_only` or `do_not_contact`; `outreach_due` then excludes them automatically |
 
@@ -64,5 +85,5 @@ Because every agent reads the same tables, no routine changes are needed.
 ## Connectors used
 
 - Supabase: `execute_sql`
-- Gmail: `search_threads`, `get_thread`, `reply`, `create_draft`, `send_message`
+- Gmail: `search_threads`, `get_thread`, `reply`, `create_draft`, `send_message`, `update_draft`
 - Claude drafting (the artifact `sample` capability), billed to the viewer's Claude plan

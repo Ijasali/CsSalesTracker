@@ -247,14 +247,13 @@ const S = {
   schools: lsGet('schools', null),   // pipeline schools (replied at least once)
   stats: lsGet('stats', null),       // stage counts, sync info, agent runs
   batch: lsGet('batch', null),       // planned_actions for the next send day
-  review: lsGet('review', null),     // the review email in Gmail (for Approve / Hold)
   week: lsGet('week', null),
   bank: lsGet('bank', null),
   detail: {},                        // school id -> {timeline, contacts, msgs}
   gmailNew: {},                      // school id -> newest Gmail message not yet synced
   err: {}, busy: {},
   pipeFilter:'all', bankRegion:'all', bankSel:new Set(), weekTab:'next', sched: lsGet('sched', null), extra:{}, openDays:new Set(), batchKey:null, tpl: lsGet('tpl', {}),
-  decisions:{}, confirmDecision:false, confirmBank:'',
+  confirmBank:'', todo: lsGet('todo', null), reviewOpen:false, confirmReject:null,
   lead:null, composer:null, modal:null
 };
 
@@ -326,6 +325,13 @@ where s.stage in ('engaged','meeting_booked','proposal_sent','client')
    or (s.replies > 0 and s.stage not in ('closed_lost','do_not_contact','bounced','no_email'))`;
 const qSchool = id => Q_SCHOOLS_BASE + ` where s.id = ${lit(id)}`;
 const Q_SCHEDULE = `select * from outreach_schedule(15)`;
+const Q_TODO = `
+select p.id, p.school_id, p.kind, p.status, p.planned_for, p.subject, p.body, p.context, p.reason, p.note, p.draft_id, p.thread_id,
+  p.answers_message_id, p.reply_to_message_id, p.contact_email, p.approved_at, p.approved_by, p.created_at,
+  s.name as school, s.stage, s.city, c.first_name, c.last_name
+from planned_actions p join schools s on s.id = p.school_id left join contacts c on lower(c.email) = lower(p.contact_email)
+where p.kind in ('reply','follow_up') and p.status in ('pending_approval','approved','held')
+order by case p.status when 'pending_approval' then 0 when 'held' then 1 else 2 end, case p.kind when 'reply' then 0 else 1 end, p.created_at`;
 const Q_TPL = `select id, subject, body from email_templates where id in ('touch1_v2','touch2_v2','touch3_v2')`;
 const Q_STATS = `
 select json_build_object(
@@ -339,7 +345,7 @@ function qBatch(){ return `
 select p.id, p.school_id, p.planned_for, p.review_no, p.touch, p.action, p.status, p.subject, p.body, p.reason, p.context, p.draft_id, p.contact_email, p.sent_at, p.note,
   s.name as school, s.city, c.first_name, c.last_name
 from planned_actions p join schools s on s.id = p.school_id left join contacts c on lower(c.email) = lower(p.contact_email)
-where p.kind = 'cold_auto' and p.planned_for = (select min(planned_for) from planned_actions where kind = 'cold_auto' and planned_for >= ${lit(TODAY)})
+where p.kind = 'cold_auto' and p.planned_for >= ${lit(TODAY)}
 order by p.review_no nulls last, p.id`; }
 function qWeek(){ return `
 select oc.email, oc.school_id, oc.school, oc.city, oc.first_name, oc.last_name, oc.touches_since_restart, oc.last_touch_at, oc.stage, oc.email_status, oc.school_ever_replied,
@@ -384,6 +390,38 @@ async function loadStats(){
   catch(e){ S.err.stats = errText(e, CFG.supabase); }
   render();
 }
+async function loadTodo(){
+  S.busy.todo = true; delete S.err.todo; render();
+  try { S.todo = await sql(Q_TODO); lsSet('todo', S.todo); }
+  catch(e){ S.err.todo = errText(e, CFG.supabase); }
+  S.busy.todo = false; render();
+}
+const pendingTodo = () => (S.todo||[]).filter(t => t.status === 'pending_approval');
+/* the morning sender runs at 9:30 am Toronto time, Mon-Fri, and sends every approved email */
+function nextSendRun(){
+  const o = tzParts(new Date()); const hm = new Date().toLocaleTimeString('en-GB',{timeZone:CFG.tz, hour:'2-digit', minute:'2-digit', hour12:false});
+  let d = TODAY; const wd = ['Mon','Tue','Wed','Thu','Fri'].includes(o.weekday);
+  if(!(wd && hm < '09:30')){ d = addDays(d, 1); while(new Date(d + 'T12:00:00Z').getUTCDay() % 6 === 0) d = addDays(d, 1); }
+  return d;
+}
+async function setApproval(t, status, fields){
+  fields = fields || {};
+  const from = status === 'approved' ? "('pending_approval','held')" : status === 'pending_approval' ? "('approved','held')" : "('pending_approval','approved','held')";
+  const r = await sql(`with u as (update planned_actions set status = ${lit(status)},
+      approved_at = ${status === 'approved' ? 'now()' : 'null'}, approved_by = ${status === 'approved' ? lit('Ijas (CS Tracker app)') : 'null'},
+      note = ${status === 'rejected' ? lit('Rejected in CS Tracker app') : 'note'}, updated_at = now()
+    where id = ${+t.id} and status in ${from} returning id, school_id, kind, subject)
+  insert into activities (school_id, occurred_at, kind, summary, source)
+  select school_id, now(), 'note', ${lit(status === 'approved' ? 'Approved in app: ' : status === 'rejected' ? 'Rejected in app: ' : 'Approval undone in app: ')} || coalesce(subject, kind), 'cs-tracker-app' from u returning school_id`, true);
+  return r.length > 0;
+}
+async function saveDraftText(t, subject, body){
+  let draftId = t.draft_id;
+  if(draftId){ try { await gm('update_draft', {draftId, subject, body}); } catch(e){ draftId = null; } }
+  await sql(`update planned_actions set subject = ${lit(subject)}, body = ${lit(body)}, draft_id = ${draftId ? lit(draftId) : 'null'}, updated_at = now()
+    where id = ${+t.id} and status in ('pending_approval','held','approved') returning id`, true);
+  t.subject = subject; t.body = body; t.draft_id = draftId;
+}
 async function loadSchedule(){
   S.busy.sched = true; delete S.err.sched; render();
   try { S.sched = await sql(Q_SCHEDULE); lsSet('sched', S.sched);
@@ -402,7 +440,6 @@ async function loadBatch(){
   try { S.batch = await sql(qBatch()); lsSet('batch', S.batch); }
   catch(e){ S.err.batch = errText(e, CFG.supabase); }
   S.busy.batch = false; render();
-  loadReview();
 }
 async function loadWeek(){
   S.busy.week = true; delete S.err.week; render();
@@ -446,32 +483,7 @@ async function checkGmailSinceSync(){
 }
 function decodeEntities(s){ const t = document.createElement('textarea'); t.innerHTML = s; return t.value; }
 
-/* the evening agent's review email: the morning sender reads your approval from a reply in that thread */
-async function loadReview(){
-  try {
-    const res = await gm('search_threads', {query:`from:${CFG.me} (subject:"REVIEW for" OR subject:"PRE-APPROVED for") newer_than:3d`, pageSize:5});
-    const th = (res && res.threads) || [];
-    if(!th.length){ S.review = {none:true}; }
-    else {
-      const t = await gm('get_thread', {threadId:th[0].id, messageFormat:'PLAIN_TEXT'});
-      const msgs = (t.messages||[]).slice().sort((a,b) => String(a.date).localeCompare(String(b.date)));
-      const rv = msgs.find(m => /^(REVIEW|PRE-APPROVED) for/i.test(m.subject||'')) || msgs[0];
-      const later = msgs.filter(m => m.date > rv.date && CFG.reviewers.some(r => String(m.sender||'').toLowerCase().includes(r)));
-      const last = later[later.length-1];
-      S.review = {subject:rv.subject, pre:/^PRE-APPROVED/i.test(rv.subject||''), messageId:rv.id, date:rv.date, url:t.viewUrl,
-        decision: last ? firstLine(last.plaintextBody || last.snippet) : '', decisionDate: last ? last.date : ''};
-    }
-    delete S.err.review; lsSet('review', S.review);
-  } catch(e){ S.err.review = errText(e, CFG.gmail); }
-  resetDecisions(); render();
-}
-function firstLine(s){ return String(s||'').split('\n').map(x => x.trim()).find(x => x && !/^>/.test(x)) || ''; }
 function batchItems(){ return (S.batch||[]).filter(b => b.status === 'planned'); }
-function resetDecisions(){
-  const key = (S.review && S.review.messageId || '') + '|' + batchItems().map(b => b.id).join(',');
-  if(S.decisions._for === key) return;
-  S.decisions = {_for:key}; batchItems().forEach(b => S.decisions[b.review_no] = S.review && S.review.pre ? 'ok' : '');
-}
 
 /* ---------- derived ---------- */
 function isMine(sender){ const s = String(sender||'').toLowerCase(); return s.includes('@cybersquare.ca') || s.includes('ijasali.m@gmail.com'); }
@@ -693,7 +705,7 @@ function render(){
 }
 function renderTabs(){
   const needs = leads().filter(l => l.rank <= 1).length;
-  const pendingBatch = batchItems().length && S.review && !S.review.none && !S.review.decision ? 1 : 0;
+  const pendingBatch = pendingTodo().length;
   const t = [['today','Today','home', needs], ['pipeline','Pipeline','pipe', 0], ['outreach','Outreach','send', pendingBatch], ['bank','Lead Bank','db', 0]];
   $('#tabs').innerHTML = t.map(([k,l,i,b]) => `<button type="button" data-act="tab" data-k="${k}" ${S.tab===k && !S.lead ? 'aria-current="page"' : ''}><span class="pad">${svg(i,22,1.8)}</span><span>${l}</span>${b ? `<span class="badge" aria-label="${b} need attention">${b}</span>` : ''}</button>`).join('');
 }
@@ -703,7 +715,7 @@ function noRuntime(){
 }
 function syncLine(){
   const st = S.stats; if(!st) return '';
-  const runs = (st.runs||[]); const ev = runs.find(r => r.agent === 'evening_review');
+  const runs = (st.runs||[]); const ev = runs.find(r => r.agent === 'evening_prep' || r.agent === 'evening_review');
   const synced = st.synced; const age = daysSince(synced); const stale = age >= 2;
   const failed = runs.filter(r => r.outcome && !/^(ok|success|done|completed)/i.test(r.outcome));
   let h = `<div class="banner ${stale ? 'warn' : 'info'}">${svg(stale ? 'alert' : 'db',18)}<span>Gmail synced into the database <b>${esc(rel(synced) || 'never')}</b>${ev ? ` · evening agent last ran ${esc(rel(ev.started_at))}` : ''}.${stale ? ' Tap Sync to bring in everything since then.' : ''}</span></div>`;
@@ -713,27 +725,27 @@ function syncLine(){
 
 function viewToday(){
   const ls = leads(); const waiting = ls.filter(l => l.rank === 0); const due = ls.filter(l => l.rank > 0 && l.rank <= 3);
-  const items = batchItems(); const rv = S.review;
+  const todoN = pendingTodo().length;
   const wk = S.week && S.week.week === WEEK0 ? S.week.rows : [];
   const sentWeek = wk.reduce((n,r) => n + (+r.sent_week||0), 0);
   const repliesWeek = ls.filter(l => l.lastIn && dayOf(l.lastIn.at) >= WEEK0).length;
   const bankN = (S.bank||[]).length;
-  const needsBatch = items.length && rv && !rv.none && !rv.decision;
-  const n = waiting.length + due.length + (needsBatch ? 1 : 0);
+  const n = waiting.length + due.length + todoN;
   const today = new Date().toLocaleDateString('en-US',{timeZone:CFG.tz, weekday:'long', day:'numeric', month:'short'});
   let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><div class="eyebrow">Cyber Square · Sales</div><h1>${esc(today)}</h1>
     <div class="sub">${S.busy.schools ? 'Checking the database…' : n ? `${n} thing${n>1?'s':''} need you` : 'Nothing urgent right now'}</div></div>${syncButton()}</header>`;
   h += syncStatus();
   h += sectionErr('schools','stats');
   h += `<section class="stack"><h2 class="sec">Needs you</h2>`;
-  if(needsBatch){
-    h += `<button type="button" class="tap" data-act="tab" data-k="outreach" style="border:2px solid var(--accent)"><span class="ico" style="background:var(--accent-soft);color:var(--accent-fg)">${svg('send')}</span>
-      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="xs b" style="color:var(--accent-fg)">${rv.pre ? 'Pre-approved batch · hold any?' : 'Next batch · approve'}</span><span class="xs muted">${esc(rel(rv.date))}</span></span>
-      <span class="b">${items.length} drafts for ${esc(fmtDay(items[0].planned_for))}</span><span class="small muted">${esc(touchMix(items))}</span></span></button>`;
+  if(todoN){
+    const t0 = pendingTodo();
+    h += `<button type="button" class="tap" data-act="openreview" style="border:2px solid var(--accent)"><span class="ico" style="background:var(--bad-bg);color:var(--bad-fg)">${svg('check')}</span>
+      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="xs b" style="color:var(--bad-fg)">Needs review</span><span class="xs muted">nothing sends until you approve</span></span>
+      <span class="b">${todoN} email${todoN>1?'s':''} drafted by Claude</span><span class="small muted clamp2">${esc(t0.slice(0,3).map(t => t.school).join(', '))}${todoN > 3 ? ' and more' : ''}</span></span>${svg('chev',18,2)}</button>`;
   }
   waiting.forEach(l => { h += leadTap(l, 'bad', 'reply', l.lastIn && l.lastIn.unsynced ? 'Reply waiting · new in Gmail' : 'Reply waiting', l.lastIn ? rel(l.lastIn.at) : '', l.lastIn ? `“${String(l.lastIn.text||'').slice(0,120)}”` : ''); });
   due.slice(0,6).forEach(l => { h += leadTap(l, l.tone === 'warn' ? 'proposal' : 'bad', 'clock', l.tone === 'warn' ? 'Follow up' : 'To do', l.lastAt ? 'last ' + rel(l.lastAt) : '', l.nextLabel); });
-  if(!waiting.length && !due.length && !needsBatch) h += (S.busy.schools && !S.schools ? skel(2) : `<div class="card empty">You’re up to date.</div>`);
+  if(!waiting.length && !due.length && !todoN) h += (S.busy.schools && !S.schools ? skel(2) : `<div class="card empty">You’re up to date.</div>`);
   if(due.length > 6) h += `<button type="button" class="btn full" data-act="tab" data-k="pipeline">See all ${due.length} follow-ups</button>`;
   h += `</section>`;
   h += `<section class="stack"><h2 class="sec">This week</h2><div class="grid4">
@@ -800,6 +812,10 @@ function viewLead(){
   h += `<section class="grid3"><div class="stat"><span class="k">Emails from us</span><span class="v">${l.sent}</span></div>
     <div class="stat"><span class="k">Follow-ups after reply</span><span class="v">${l.followups}</span></div>
     <div class="stat"><span class="k">Last contact</span><span class="v" style="font-size:16px;padding-top:4px">${l.lastAt ? esc(fmtDay(l.lastAt)) : '–'}</span></div></section>`;
+  const mine = (S.todo||[]).filter(t => t.school_id === l.id);
+  mine.forEach(t => { h += `<section class="card stack" style="border-color:var(--${t.status === 'pending_approval' ? 'bad' : 'won'}-fg)"><div class="between"><span class="xs b muted">${t.kind === 'reply' ? 'REPLY' : 'FOLLOW-UP'} DRAFTED BY CLAUDE</span>${approvalBadge(t.status, t.kind)}</div>
+      <span class="b small">${esc(t.subject || '')}</span><span class="small muted clamp2">${esc(t.body || '')}</span>
+      <button type="button" class="btn ${t.status === 'pending_approval' ? 'primary' : ''} full" data-act="openreview">${t.status === 'pending_approval' ? 'Review and approve' : 'Open in Review'}</button></section>`; });
   if(upcoming.length){
     const u = upcoming[0];
     h += `<section class="card stack" style="background:var(--accent-soft);border-color:transparent"><span class="xs b" style="color:var(--accent-fg);letter-spacing:.06em">SCHEDULED · ${esc(dayLabel(u.send_date).toUpperCase())}</span>
@@ -841,12 +857,18 @@ function touchName(t){ return t == 1 ? 'First email' : t == 2 ? 'Follow-up 1' : 
 function dayLabel(d){ if(d === TODAY) return 'Today'; if(d === addDays(TODAY,1)) return 'Tomorrow';
   return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB',{timeZone:'UTC', weekday:'short', day:'numeric', month:'short'}); }
 function agentHealth(){
-  const runs = (S.stats && S.stats.runs) || []; const ev = runs.find(r => r.agent === 'evening_review');
-  if(!ev) return `<div class="banner warn">${svg('alert',18)}<span>Claude’s evening agent hasn’t logged a run yet, so no batch has been drafted. Everything below is the plan it will follow; each day’s emails are drafted at 8 pm the evening before (Sun–Thu).</span></div>`;
+  const runs = (S.stats && S.stats.runs) || []; const ev = runs.find(r => r.agent === 'evening_prep' || r.agent === 'evening_review');
+  if(!ev) return `<div class="banner warn">${svg('alert',18)}<span>Claude’s evening prep hasn’t logged a run yet, so nothing has been drafted. Everything below is the plan it will follow; each day’s emails are drafted at 8 pm the evening before (Sun–Thu).</span></div>`;
   if(daysSince(ev.started_at) > 3) return `<div class="banner warn">${svg('alert',18)}<span>Claude’s evening agent last ran ${esc(rel(ev.started_at))}. The plan below still applies, but nothing is being drafted until it runs again.</span></div>`;
   return '';
 }
 /* batches: every send day has a "First emails" batch and a "Follow-ups" batch (Follow-up 1 + Final) */
+function approvalBadge(status, kind){
+  const m = {pending_approval:['Needs review','bad'], held:['Held','neutral'], rejected:['Rejected','neutral'], sent:['Sent','replied'], skipped:['Skipped','neutral'],
+    approved: kind === 'cold_auto' || !kind ? ['Pre-approved','won'] : ['Approved','won'], planned:['Pre-approved','won'], projected:['Pre-approved','won']};
+  const [label, key] = m[status] || [cap(String(status||'')), 'neutral'];
+  return `<span class="pill" style="background:var(--${key}-bg);color:var(--${key}-fg)">${esc(label)}</span>`;
+}
 function batchesFrom(rows){
   const map = new Map();
   rows.forEach(r => { const kind = r.touch == 1 ? 'first' : 'follow'; const key = r.send_date + '|' + kind;
@@ -854,17 +876,20 @@ function batchesFrom(rows){
   return [...map.values()].sort((a,b) => a.date.localeCompare(b.date) || (a.kind === 'follow' ? -1 : 1));
 }
 function batchState(b){
-  const drafted = b.rows.filter(r => r.source === 'drafted');
-  if(!drafted.length) return {label:'Planned', key:'neutral', note:'Claude drafts it the evening before'};
-  const rv = S.review || {};
-  if(rv.decision) return {label:'Decided', key:'won', note:`You replied ${rv.decision}`};
-  if(rv.pre) return {label:'Pre-approved', key:'won', note:'Goes out at 9:30 am unless you hold it'};
-  return {label:'Needs approval', key:'bad', note:'Drafted by Claude, waiting for you'};
+  const drafted = b.rows.filter(r => r.source === 'drafted'); const held = drafted.filter(r => r.status === 'held').length;
+  if(!drafted.length) return {status:'projected', note:'Pre-approved cold outreach. Claude drafts it the evening before and it sends automatically.'};
+  return {status:'approved', note: held ? `${held} held by you · the rest send automatically at 9:30 am` : 'Drafted and pre-approved · sends automatically at 9:30 am'};
 }
 function batchTitle(b){ return b.kind === 'first' ? 'First emails' : 'Follow-ups'; }
 function viewUpcoming(){
+  if(S.reviewOpen) return viewReview();
   if(S.batchKey) return viewBatchDetail();
-  let h = sectionErr('sched','batch','review');
+  let h = sectionErr('sched','batch','todo');
+  const pend = pendingTodo(), appr = (S.todo||[]).filter(t => t.status === 'approved');
+  h += `<button type="button" class="tap" data-act="openreview" style="${pend.length ? 'border:2px solid var(--accent)' : ''}"><span class="ico" style="background:var(--${pend.length ? 'bad' : 'won'}-bg);color:var(--${pend.length ? 'bad' : 'won'}-fg)">${svg('check')}</span>
+    <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b">Review · replies & follow-ups</span>${pend.length ? approvalBadge('pending_approval') : approvalBadge('approved','reply')}</span>
+    <span class="small">${pend.length ? `<b class="mono">${pend.length}</b> waiting for you` : 'Nothing waiting for you'}${appr.length ? ` · ${appr.length} approved, sending ${esc(dayLabel(nextSendRun()))} 9:30 am` : ''}</span>
+    <span class="xs muted">Schools that have replied. Nothing is sent until you approve it here.</span></span>${svg('chev',18,2)}</button>`;
   const rows = S.sched;
   if(!rows) return h + (S.busy.sched ? skel(4) : '');
   h += agentHealth();
@@ -881,13 +906,46 @@ function viewUpcoming(){
     const cities = {}; b.rows.forEach(r => { const c = r.city || 'Unknown'; cities[c] = (cities[c]||0) + 1; });
     const topCities = Object.entries(cities).sort((x,y) => y[1]-x[1]).slice(0,3).map(([c,n]) => `${c} ${n}`).join(' · ');
     const icoKey = b.kind === 'first' ? 'replied' : 'meeting';
-    h += `<button type="button" class="tap" data-act="batch" data-k="${esc(b.key)}" style="${st.key === 'bad' ? 'border:2px solid var(--accent)' : ''}">
+    h += `<button type="button" class="tap" data-act="batch" data-k="${esc(b.key)}" style="">
       <span class="ico" style="background:var(--${icoKey}-bg);color:var(--${icoKey}-fg)">${svg(b.kind === 'first' ? 'send' : 'reply')}</span>
-      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b">${batchTitle(b)}</span><span class="pill" style="background:var(--${st.key}-bg);color:var(--${st.key}-fg)">${esc(st.label)}</span></span>
+      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b">${batchTitle(b)}</span>${approvalBadge(st.status, 'cold_auto')}</span>
       <span class="small"><b class="mono">${b.rows.length}</b> school${b.rows.length === 1 ? '' : 's'}${b.kind === 'follow' ? ` · ${fu1} follow-up 1 · ${fu2} final` : ` · ${b.rows.filter(r => r.email_type === 'direct').length} direct emails`}</span>
       <span class="xs muted">${esc(topCities)}</span></span>${svg('chev',18,2)}</button>`;
   });
   return h;
+}
+function viewReview(){
+  let h = `<button type="button" class="back" data-act="closereview">${svg('back',20,2)} Outreach</button>`;
+  h += `<header class="stack" style="gap:4px"><h1 style="font-size:26px">Review</h1><div class="sub">Replies and follow-ups to schools that have replied. Approved emails go out at the next 9:30 am send (${esc(dayLabel(nextSendRun()))}); anything not approved is never sent.</div></header>`;
+  h += sectionErr('todo');
+  const list = S.todo;
+  if(!list) return h + (S.busy.todo ? skel(3) : '');
+  if(!list.length) return h + `<div class="card empty">Nothing to review. Claude drafts replies and follow-ups each evening at 8 pm (Sun–Thu) and puts them here.</div>`;
+  const group = (title, rows) => rows.length ? `<h2 class="sec">${title}</h2>` + rows.map(reviewCard).join('') : '';
+  h += group('Needs review', list.filter(t => t.status === 'pending_approval'));
+  h += group('Held', list.filter(t => t.status === 'held'));
+  h += group('Approved · waiting for the send', list.filter(t => t.status === 'approved'));
+  return h;
+}
+function reviewCard(t){
+  const who = [t.first_name, t.last_name].filter(Boolean).join(' ');
+  const pend = t.status === 'pending_approval', appr = t.status === 'approved', held = t.status === 'held';
+  const busy = S.busy['todo' + t.id]; const rej = S.confirmReject === t.id;
+  return `<article class="card stack" style="${pend ? 'border-color:var(--bad-fg)' : ''}">
+    <div class="between" style="align-items:flex-start"><span class="stack" style="gap:1px;min-width:0"><span class="xs b muted">${t.kind === 'reply' ? 'Reply' : 'Follow-up'} · drafted ${esc(rel(t.created_at))}</span>
+      <button type="button" class="b" data-act="lead" data-k="${esc(t.school_id)}" style="border:none;background:none;padding:0;text-align:left;color:var(--accent-fg)">${esc(t.school)} ›</button>
+      <span class="small muted" style="word-break:break-all">${esc([who, t.contact_email].filter(Boolean).join(' · '))}</span></span>${approvalBadge(t.status, t.kind)}</div>
+    ${t.context || t.reason ? `<div class="small" style="color:var(--ink-2)">${esc(t.context || t.reason)}</div>` : ''}
+    ${held && t.note ? `<div class="banner warn">${svg('alert',16)}<span>${esc(t.note)}</span></div>` : ''}
+    <details ${pend ? 'open' : ''}><summary class="small b" style="cursor:pointer">${esc(t.subject || '(no subject)')}</summary><div class="quote" style="white-space:pre-wrap;margin-top:8px">${esc(t.body || '')}</div></details>
+    ${appr ? `<div class="xs muted">Approved ${esc(rel(t.approved_at))} · sends ${esc(dayLabel(nextSendRun()))} at 9:30 am</div>` : ''}
+    <div class="grid2">
+      <button type="button" class="btn" data-act="editreview" data-k="${esc(t.id)}" ${busy ? 'disabled' : ''}>${svg('spark',16)} Edit with Claude</button>
+      ${appr ? `<button type="button" class="btn" data-act="unapprove" data-k="${esc(t.id)}" ${busy ? 'disabled' : ''}>Undo approval</button>`
+             : `<button type="button" class="btn primary" data-act="approve" data-k="${esc(t.id)}" ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span>' : svg('check',16,2.4) + ' Approve'}</button>`}
+    </div>
+    ${appr ? '' : `<button type="button" class="btn ${rej ? 'danger' : ''}" style="height:38px" data-act="reject" data-k="${esc(t.id)}" ${busy ? 'disabled' : ''}>${rej ? 'Tap again: never send this email' : 'Don’t send'}</button>`}
+  </article>`;
 }
 function viewBatchDetail(){
   const rows = (S.sched||[]); const b = batchesFrom(rows).find(x => x.key === S.batchKey);
@@ -895,24 +953,19 @@ function viewBatchDetail(){
   if(!b) return h + `<div class="card empty">This batch has already gone out or changed. Pull to refresh.</div>`;
   const st = batchState(b);
   const drafted = b.rows.filter(r => r.source === 'drafted');
-  const items = batchItems().filter(x => drafted.some(r => r.planned_action_id === x.id));
   h += `<header class="stack" style="gap:6px"><div class="between" style="align-items:flex-start"><div class="stack" style="gap:2px"><div class="eyebrow">${esc(dayLabel(b.date))} · 9:30 am</div><h1 style="font-size:26px">${batchTitle(b)}</h1></div>
-    <span class="pill" style="background:var(--${st.key}-bg);color:var(--${st.key}-fg)">${esc(st.label)}</span></div><div class="sub">${b.rows.length} schools · ${esc(st.note)}</div></header>`;
-  h += sectionErr('review');
+    ${approvalBadge(st.status, 'cold_auto')}</div><div class="sub">${b.rows.length} schools · ${esc(st.note)}</div></header>`;
+  h += `<div class="banner info">${svg('check',18)}<span>These schools have never replied, so their emails are pre-approved and need no review. Hold any you want to stop.</span></div>`;
   // what the email says
   const tpls = b.kind === 'first' ? ['touch1_v2'] : [...new Set(b.rows.map(r => r.touch == 2 ? 'touch2_v2' : 'touch3_v2'))];
   if(!drafted.length) h += tpls.map(id => { const t = S.tpl[id]; if(!t) return '';
     return `<details class="card"><summary class="small b" style="cursor:pointer">${esc(id === 'touch1_v2' ? 'The first email' : id === 'touch2_v2' ? 'Follow-up 1 email' : 'Final follow-up email')}</summary>
       <div class="xs muted" style="margin-top:8px">${esc(t.subject ? 'Subject: ' + t.subject : id === 'touch1_v2' ? 'Subject: “Robotics program for {School}” or “Quick question about coding at {School}”' : 'Sent as a reply in the same thread')}</div>
       <div class="quote" style="white-space:pre-wrap;margin-top:8px">${esc(t.body)}</div></details>`; }).join('');
-  // approval for drafted batches
-  const rv = S.review || {}; const locked = !!rv.decision || !rv.messageId;
-  if(items.length && !locked) h += `<div class="grid2"><button type="button" class="btn" data-act="batchall" data-v="held">Hold all</button><button type="button" class="btn primary" data-act="batchall" data-v="ok">${svg('check',16,2.4)} Approve all</button></div>`;
-  if(items.length && rv.none) h += `<div class="banner warn">${svg('alert',18)}<span>The review email for this batch isn’t in Gmail yet, so approvals can’t be sent from here.</span></div>`;
   h += `<div class="list">` + b.rows.map(r => {
     const who = [r.first_name, r.last_name].filter(Boolean).join(' ');
-    const it = items.find(x => x.id === r.planned_action_id);
-    const d = it ? S.decisions[it.review_no] : ''; const ok = d === 'ok', held = d === 'held';
+    const it = (S.batch||[]).find(x => x.id === r.planned_action_id);
+    const held = it && it.status === 'held';
     const key = r.touch == 1 ? 'replied' : r.touch == 2 ? 'meeting' : 'proposal';
     const sub = r.touch == 1 ? (r.emailed_before_july ? 'Restart · emailed before July' : 'Never emailed') : 'Last email ' + fmtDay(r.last_touch_at);
     return `<div class="stack" style="padding:12px 16px;gap:8px;${held ? 'opacity:.6' : ''}">
@@ -920,42 +973,11 @@ function viewBatchDetail(){
         <span class="stack" style="gap:1px;flex:1;min-width:0"><span class="b small">${it ? '#' + esc(it.review_no) + ' ' : ''}${esc(r.school)}</span>
         <span class="xs muted" style="word-break:break-all">${esc([who, r.email].filter(Boolean).join(' · '))}</span>
         <span class="xs muted">${esc([r.city, r.email_type === 'direct' ? 'Direct' : 'Generic', sub].filter(Boolean).join(' · '))}</span></span>
-        <span class="pill" style="background:var(--${key}-bg);color:var(--${key}-fg)">${esc(touchName(r.touch))}</span>${svg('chev',16,2)}</button>
+        <span class="stack" style="gap:4px;align-items:flex-end"><span class="pill" style="background:var(--${key}-bg);color:var(--${key}-fg)">${esc(touchName(r.touch))}</span>${approvalBadge(it ? it.status : 'projected', 'cold_auto')}</span>${svg('chev',16,2)}</button>
       ${it ? `<details><summary class="xs b" style="cursor:pointer">${esc(it.subject || 'Drafted email')}</summary><div class="quote" style="white-space:pre-wrap;margin-top:6px">${esc(it.body || '')}</div></details>` : ''}
-      ${it && !locked ? `<div class="grid2"><button type="button" class="btn" style="height:38px;${held ? 'background:var(--inv);color:var(--inv-ink)' : ''}" data-act="dec" data-k="${esc(it.review_no)}" data-v="held" aria-pressed="${held}">Hold</button>
-        <button type="button" class="btn ${ok ? '' : 'primary'}" style="height:38px;${ok ? 'background:var(--won-fg);color:var(--surface);border-color:var(--won-fg)' : ''}" data-act="dec" data-k="${esc(it.review_no)}" data-v="ok" aria-pressed="${ok}">${ok ? 'Approved' : 'Approve'}</button></div>` : ''}
+      ${it && (it.status === 'approved' || it.status === 'held') ? `<button type="button" class="btn" style="height:38px" data-act="${held ? 'release' : 'hold'}" data-k="${esc(it.id)}">${held ? 'Release (send as planned)' : 'Hold this one'}</button>` : ''}
     </div>`; }).join('') + `</div>`;
   return h;
-}
-function viewBatch(){
-  let h = sectionErr('batch','review');
-  if(!S.batch) return h + (S.busy.batch ? skel(3) : '');
-  const all = S.batch; const items = batchItems(); const rv = S.review;
-  if(!all.length) return h;
-  const day = all[0].planned_for;
-  const done = all.filter(b => b.status !== 'planned');
-  h += `<div class="small muted">Batch for <b style="color:var(--ink)">${esc(fmtDay(day))}</b> · ${all.length} emails${rv && rv.pre ? ' · pre-approved, all go out at 9:30 am unless you hold them' : ' · only what you approve goes out at 9:30 am'}${rv && rv.url ? ` · <a href="${esc(rv.url)}" target="_blank" rel="noopener">review email</a>` : ''}</div>`;
-  if(rv && rv.none && items.length) h += `<div class="banner warn">${svg('alert',18)}<span>The review email for this batch isn’t in Gmail yet, so approvals can’t be sent from here. Refresh after it arrives.</span></div>`;
-  if(rv && rv.decision) h += `<div class="banner info">${svg('check',18)}<span>You replied <b>${esc(rv.decision)}</b> ${esc(rel(rv.decisionDate))}. The morning sender acts on it at 9:30 am.</span></div>`;
-  const locked = !!(rv && rv.decision) || !(rv && rv.messageId);
-  h += items.map(b => { const n = b.review_no; const d = S.decisions[n]; const ok = d === 'ok', held = d === 'held';
-    const who = [b.first_name, b.last_name].filter(Boolean).join(' ');
-    return `<article class="card stack" style="${ok ? 'border-color:var(--won-fg)' : ''}${held ? ';opacity:.6' : ''}">
-      <div class="between" style="align-items:flex-start"><span class="stack" style="gap:1px;min-width:0"><span class="xs b muted">#${esc(n)} · Touch ${esc(b.touch || '?')}</span><button type="button" class="b" data-act="lead" data-k="${esc(b.school_id)}" style="border:none;background:none;padding:0;text-align:left;color:var(--accent-fg)">${esc(b.school)} ›</button>
-      <span class="small muted" style="word-break:break-all">${esc([who, b.contact_email].filter(Boolean).join(' · '))}</span></span>
-      <span class="pill" style="background:var(--${ok ? 'won' : held ? 'neutral' : 'proposal'}-bg);color:var(--${ok ? 'won' : held ? 'neutral' : 'proposal'}-fg)">${ok ? 'Approved' : held ? 'Held' : 'Waiting'}</span></div>
-      ${b.reason || b.context ? `<div class="xs muted">${esc(b.reason || b.context)}</div>` : ''}
-      <details><summary class="small b" style="cursor:pointer">${esc(b.subject || '(no subject)')}</summary><div class="quote" style="white-space:pre-wrap;margin-top:8px">${esc(b.body || '')}</div></details>
-      ${locked ? '' : `<div class="grid2"><button type="button" class="btn" data-act="dec" data-k="${esc(n)}" data-v="held" aria-pressed="${held}" style="${held ? 'background:var(--inv);color:var(--inv-ink)' : ''}">Hold</button>
-      <button type="button" class="btn ${ok ? '' : 'primary'}" data-act="dec" data-k="${esc(n)}" data-v="ok" aria-pressed="${ok}" style="${ok ? 'background:var(--won-fg);color:var(--surface);border-color:var(--won-fg)' : ''}">${ok ? svg('check',16,2.4) + ' Approved' : 'Approve'}</button></div>`}</article>`; }).join('');
-  if(done.length) h += `<section class="stack" style="gap:8px"><h2 class="sec">Already handled</h2><div class="list">${done.map(b => `<div class="between" style="padding:12px 16px"><span class="stack" style="gap:0;min-width:0"><span class="b small">#${esc(b.review_no)} ${esc(b.school)}</span><span class="xs muted">${esc(b.note || b.contact_email)}</span></span><span class="pill" style="background:var(--${b.status==='sent' ? 'won' : b.status==='skipped' ? 'bad' : 'neutral'}-bg);color:var(--${b.status==='sent' ? 'won' : b.status==='skipped' ? 'bad' : 'neutral'}-fg)">${esc(cap(b.status))}</span></div>`).join('')}</div></section>`;
-  return h;
-}
-function decisionText(){
-  const rv = S.review; const nums = batchItems().map(b => b.review_no);
-  const ok = nums.filter(n => S.decisions[n] === 'ok'); const held = nums.filter(n => S.decisions[n] !== 'ok');
-  if(rv.pre){ if(!held.length) return ''; if(!ok.length) return 'HOLD'; return 'HOLD ' + held.join(','); }
-  if(!ok.length) return 'HOLD'; if(ok.length === nums.length) return 'SEND ALL'; return 'SEND ' + ok.join(',');
 }
 function viewWeek(){
   let h = sectionErr('week');
@@ -1020,13 +1042,6 @@ function renderActionbar(){
     a.innerHTML = `<div class="actionbar"><div class="in" style="flex-wrap:wrap"><span class="stack" style="gap:0;flex:1;min-width:120px"><span class="b small">${S.bankSel.size} selected</span><span class="xs" style="opacity:.85">${c ? 'Tap again to confirm' : 'The agents will never email these'}</span></span>
       <button type="button" class="btn" data-act="flag" data-k="casa" ${S.busy.flag ? 'disabled' : ''}>${c === 'casa' ? 'Confirm Casa only' : 'Casa only'}</button>
       <button type="button" class="btn" data-act="flag" data-k="dnc" ${S.busy.flag ? 'disabled' : ''}>${c === 'dnc' ? 'Confirm' : 'Do not contact'}</button></div></div>`;
-  } else if(!S.lead && S.tab === 'outreach' && S.weekTab === 'next' && batchItems().length && S.review && S.review.messageId && !S.review.decision){
-    const txt = decisionText(); const rv = S.review; const items = batchItems();
-    const nOk = items.filter(b => S.decisions[b.review_no] === 'ok').length; const nHeld = items.length - nOk;
-    const label = S.confirmDecision ? `Reply “${txt}” to the agent` : 'Confirm';
-    a.innerHTML = `<div class="actionbar"><div class="in"><span class="stack" style="gap:0;flex:1"><span class="b small">${nOk} approved · ${nHeld} ${rv.pre ? 'held' : 'not approved'}</span>
-      <span class="xs" style="opacity:.85">${rv.pre && !txt ? 'All go out at 9:30 am. No reply needed.' : 'The morning sender picks this up at 9:30 am'}</span></span>
-      ${txt ? `<button type="button" class="btn" data-act="decide" ${S.busy.decide ? 'disabled' : ''}>${S.busy.decide ? '<span class="spin"></span>' : esc(label)}</button>` : ''}</div></div>`;
   } else a.innerHTML = '';
 }
 
@@ -1042,7 +1057,7 @@ function overlayComposer(){
   return `<div class="sheet-wrap"><div class="scrim" data-act="closeov"></div><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="cmp-t">
     <div class="grab"><i></i></div>
     <div class="hd"><span class="ico" style="width:32px;height:32px;border-radius:10px;background:var(--claude-soft);color:var(--claude)">${svg('spark',18)}</span>
-      <span class="stack" style="gap:0;flex:1;min-width:0"><h2 id="cmp-t" style="margin:0;font-size:17px">Reply to ${esc(l.first || l.contact || l.school)}</h2><span class="xs muted">Claude drafts from the emails and notes in your database</span></span>
+      <span class="stack" style="gap:0;flex:1;min-width:0"><h2 id="cmp-t" style="margin:0;font-size:17px">Reply to ${esc(l.first || l.contact || l.school)}</h2><span class="xs muted">${c.review ? 'Edit Claude’s draft, then approve it' : 'Claude drafts from the emails and notes in your database'}</span></span>
       <button type="button" class="iconbtn" style="border:none" data-act="closeov" aria-label="Close">${svg('x',20,2)}</button></div>
     <div class="bd">
       ${c.lastIn ? `<div class="quote"><div class="xs b muted" style="letter-spacing:.06em">${esc((l.first || 'They').toUpperCase())} WROTE · ${esc(rel(c.lastIn.at).toUpperCase())}</div>“${esc(String(c.lastIn.text||'').slice(0,400))}”</div>` : ''}
@@ -1060,8 +1075,10 @@ function overlayComposer(){
     </div>
     <div class="ft">
       <button type="button" class="btn full" data-act="regen" ${c.streaming || c.loading || !S.sample ? 'disabled' : ''}>${c.streaming ? '<span class="spin"></span> Writing' : svg('refresh',16,2) + ' Regenerate'}</button>
-      <div class="grid2"><button type="button" class="btn" data-act="savedraft" ${c.busy || !v ? 'disabled' : ''}>Save to Gmail drafts</button>
-      <button type="button" class="btn ${c.confirm ? 'danger' : 'primary'}" data-act="sendreply" ${c.busy || !v || c.streaming ? 'disabled' : ''} style="height:48px">${c.busy ? '<span class="spin"></span>' : c.confirm ? 'Tap again to send' : svg('send',16,2) + ' Send'}</button></div>
+      ${c.review ? `<div class="grid2"><button type="button" class="btn" data-act="savereview" ${c.busy || !v || c.streaming ? 'disabled' : ''}>Save, keep in review</button>
+      <button type="button" class="btn primary" data-act="saveapprove" ${c.busy || !v || c.streaming ? 'disabled' : ''} style="height:48px">${c.busy ? '<span class="spin"></span>' : svg('check',16,2.4) + ' Save & approve'}</button></div>
+      <div class="xs muted">Approved emails go out at the next 9:30 am send (${esc(dayLabel(nextSendRun()))}).</div>` : `<div class="grid2"><button type="button" class="btn" data-act="savedraft" ${c.busy || !v ? 'disabled' : ''}>Save to Gmail drafts</button>
+      <button type="button" class="btn ${c.confirm ? 'danger' : 'primary'}" data-act="sendreply" ${c.busy || !v || c.streaming ? 'disabled' : ''} style="height:48px">${c.busy ? '<span class="spin"></span>' : c.confirm ? 'Tap again to send' : svg('send',16,2) + ' Send'}</button></div>`}
     </div></section></div>`;
 }
 function overlayModal(){
@@ -1087,8 +1104,8 @@ function stripQuoted(t){
     if(/^\s*>/.test(line)) continue; out.push(line); }
   return out.join('\n').replace(/\n{3,}/g,'\n\n').trim();
 }
-async function openComposer(l){
-  const c = S.composer = {lead:l, versions:[], idx:-1, loading:true, streaming:false, hint:'', ask:'', lastIn:l.lastIn};
+async function openComposer(l, review){
+  const c = S.composer = {lead:l, review, versions:[], idx:-1, loading:true, streaming:false, hint:'', ask:'', lastIn:l.lastIn};
   render();
   if(!S.detail[l.id]) await loadDetail(l.id);
   const d = S.detail[l.id] || {msgs:[], timeline:[]};
@@ -1102,6 +1119,7 @@ async function openComposer(l){
   c.thread = msgs.map(m => `From: ${m.dir === 'outbound' ? 'Ijas (us)' : m.from_email}\nDate: ${fmtDay(m.sent_at)}\nSubject: ${m.subject||''}\n\n${stripQuoted(m.text).slice(0,2500)}`).join('\n\n-----\n\n');
   if(lastIn && lastIn.unsynced) c.thread += `\n\n-----\n\nFrom: ${lastIn.from}\nDate: ${fmtDay(lastIn.at)}\nSubject: ${lastIn.subject||''}\n\n${lastIn.text}`;
   c.notes = (d.timeline||[]).filter(t => !String(t.kind).startsWith('email:')).slice(0,8).map(t => `${fmtDay(t.at)} ${t.kind}: ${t.summary}`).join('\n');
+  if(review){ c.to = review.contact_email; c.subject = review.subject || c.subject; c.versions.push({text: review.body || ''}); c.idx = 0; c.loading = false; return render(); }
   c.loading = false; render();
   if(!S.sample){ c.error = 'Claude drafting is not available in this view. You can still write and send the reply yourself.'; c.versions.push({text:''}); c.idx = 0; render(); return; }
   draft(false);
@@ -1179,7 +1197,7 @@ document.addEventListener('click', async ev => {
   const el = ev.target.closest('[data-act]'); if(!el || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type !== 'checkbox')) return;
   const act = el.dataset.act, k = el.dataset.k;
   switch(act){
-    case 'tab': S.tab = k; S.lead = null; S.batchKey = null; lsSet('tab', k); render(); window.scrollTo(0,0); break;
+    case 'tab': S.tab = k; S.lead = null; S.batchKey = null; S.reviewOpen = false; lsSet('tab', k); render(); window.scrollTo(0,0); break;
     case 'refresh': refreshAll(); break;
     case 'sync': syncGmail(); break;
     case 'pfilter': S.pipeFilter = k; render(); break;
@@ -1189,7 +1207,26 @@ document.addEventListener('click', async ev => {
     case 'day': S.openDays.has(k) ? S.openDays.delete(k) : S.openDays.add(k); render(); break;
     case 'batch': S.batchKey = k; render(); window.scrollTo(0,0); break;
     case 'closebatch': S.batchKey = null; render(); break;
-    case 'batchall': { const b = batchesFrom(S.sched||[]).find(x => x.key === S.batchKey); if(b){ batchItems().filter(x => b.rows.some(r => r.planned_action_id === x.id)).forEach(x => S.decisions[x.review_no] = el.dataset.v); S.confirmDecision = false; render(); } } break;
+    case 'openreview': S.tab = 'outreach'; S.weekTab = 'next'; S.lead = null; S.batchKey = null; S.reviewOpen = true; lsSet('tab','outreach'); render(); window.scrollTo(0,0); loadTodo(); break;
+    case 'closereview': S.reviewOpen = false; render(); break;
+    case 'approve': case 'unapprove': case 'reject': {
+      const t = (S.todo||[]).find(x => String(x.id) === k); if(!t) break;
+      if(act === 'reject' && S.confirmReject !== t.id){ S.confirmReject = t.id; render(); break; }
+      S.busy['todo' + t.id] = true; S.confirmReject = null; render();
+      try { const ok = await setApproval(t, act === 'approve' ? 'approved' : act === 'unapprove' ? 'pending_approval' : 'rejected');
+        toast(!ok ? 'This email changed since you opened it. Refreshed.' : act === 'approve' ? `Approved · sends ${dayLabel(nextSendRun())} 9:30 am` : act === 'unapprove' ? 'Moved back to Needs review' : 'Won’t be sent'); }
+      catch(e){ toast('Not saved. ' + errText(e, CFG.supabase)); }
+      S.busy['todo' + t.id] = false; await loadTodo(); } break;
+    case 'editreview': {
+      const t = (S.todo||[]).find(x => String(x.id) === k); if(!t) break;
+      if(!findSchool(t.school_id)) await loadOne(t.school_id);
+      const l = findSchool(t.school_id); if(l) openComposer(l, t); } break;
+    case 'hold': case 'release': {
+      S.busy.flag = true; render();
+      try { await sql(`update planned_actions set status = ${act === 'hold' ? "'held', note = 'Held in CS Tracker app'" : "'approved', note = null"}, updated_at = now() where id = ${+k} and status in ${act === 'hold' ? "('approved')" : "('held')"} returning id`, true);
+        toast(act === 'hold' ? 'Held · it won’t be sent' : 'Released · sends as planned'); await Promise.all([loadBatch(), loadSchedule()]); }
+      catch(e){ toast('Not saved. ' + errText(e, CFG.supabase)); }
+      S.busy.flag = false; render(); } break;
     case 'back': S.lead = null; render(); break;
     case 'reloadlead': if(S.lead){ loadSchools(); if(S.extra[S.lead]) loadOne(S.lead); loadDetail(S.lead); } break;
     case 'compose': { const l = findSchool(S.lead); if(l) openComposer(l); } break;
@@ -1198,6 +1235,14 @@ document.addEventListener('click', async ev => {
     case 'hint': { const c = S.composer; c.ask = (document.getElementById('cmp-ask')||{}).value || c.ask; c.hint = c.hint === k ? '' : k; render(); } break;
     case 'regen': { const c = S.composer; c.ask = (document.getElementById('cmp-ask')||{}).value || ''; draft(true); } break;
     case 'sendreply': sendReply(false); break;
+    case 'savereview': case 'saveapprove': {
+      const c = S.composer; const t = c.review; const body = (document.getElementById('cmp-body')||{}).value || '';
+      if(!body.trim()){ c.error = 'The email is empty.'; render(); break; }
+      c.busy = true; c.error = ''; render();
+      try { await saveDraftText(t, c.subject, body);
+        if(act === 'saveapprove'){ const ok = await setApproval(t, 'approved'); if(!ok) throw {message:'This email changed since you opened it (it may already be sent or rejected).'}; }
+        S.composer = null; toast(act === 'saveapprove' ? `Approved · sends ${dayLabel(nextSendRun())} 9:30 am` : 'Saved · still needs review'); await loadTodo(); }
+      catch(e){ c.busy = false; c.error = 'Not saved. ' + errText(e, CFG.supabase); render(); } } break;
     case 'savedraft': sendReply(true); break;
     case 'stage': case 'note': { const l = findSchool(S.lead); if(l){ S.modal = {kind:act, lead:l}; render(); } } break;
     case 'savemodal': {
@@ -1212,15 +1257,6 @@ document.addEventListener('click', async ev => {
         await Promise.all([loadSchools(), loadDetail(m.lead.id), loadStats(), loadSchedule(), S.extra[m.lead.id] ? loadOne(m.lead.id) : null]);
       } catch(e){ m.busy = false; toast('Not saved. ' + errText(e, CFG.supabase)); }
       render(); } break;
-    case 'dec': { const n = k; if(S.decisions[n] === el.dataset.v) S.decisions[n] = S.review && S.review.pre ? 'ok' : ''; else S.decisions[n] = el.dataset.v; S.confirmDecision = false; render(); } break;
-    case 'decide': {
-      if(!S.confirmDecision){ S.confirmDecision = true; render(); break; }
-      const txt = decisionText(); const rv = S.review; if(!txt){ S.confirmDecision = false; render(); break; }
-      S.busy.decide = true; render();
-      try { await gm('reply', {messageId:rv.messageId, to:[CFG.me], body:txt + '\n\n(sent from the CS Tracker app)'});
-        rv.decision = txt; rv.decisionDate = new Date().toISOString(); lsSet('review', rv); toast('Sent to the morning sender: ' + txt); }
-      catch(e){ toast('Not sent. ' + errText(e, CFG.gmail)); }
-      S.busy.decide = false; S.confirmDecision = false; render(); } break;
     case 'bsel': { S.bankSel.has(k) ? S.bankSel.delete(k) : S.bankSel.add(k); S.confirmBank = ''; render(); } break;
     case 'flag': {
       if(S.confirmBank !== k){ S.confirmBank = k; render(); break; }
@@ -1240,7 +1276,7 @@ document.addEventListener('keydown', ev => { if(ev.key === 'Escape' && (S.compos
 /* ---------- boot ---------- */
 async function refreshAll(){
   if(!S.mcp) return;
-  await Promise.allSettled([loadSchools(), loadStats(), loadBatch(), loadSchedule(), loadWeek(), loadBank()]);
+  await Promise.allSettled([loadSchools(), loadStats(), loadTodo(), loadBatch(), loadSchedule(), loadWeek(), loadBank()]);
   checkGmailSinceSync();
   if(S.lead) loadDetail(S.lead);
 }
