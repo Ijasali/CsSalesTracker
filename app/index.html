@@ -755,7 +755,7 @@ function render(){
 function renderTabs(){
   const needs = leads().filter(l => l.rank <= 1).length;
   const pendingBatch = pendingTodo().length;
-  const t = [['today','Today','home', needs], ['pipeline','Pipeline','pipe', 0], ['review','Review','check', pendingBatch], ['outreach','Outreach','send', 0], ['bank','Leads','db', 0]];
+  const t = [['today','Today','home', 0], ['pipeline','Pipeline','pipe', 0], ['review','Review','check', pendingBatch], ['outreach','Outreach','send', 0], ['bank','Leads','db', 0]];
   $('#tabs').innerHTML = t.map(([k,l,i,b]) => `<button type="button" data-act="tab" data-k="${k}" ${S.tab===k && !S.lead ? 'aria-current="page"' : ''}><span class="pad">${svg(i,22,1.8)}</span><span>${l}</span>${b ? `<span class="badge" aria-label="${b} need attention">${b}</span>` : ''}</button>`).join('');
 }
 function noRuntime(){
@@ -773,42 +773,96 @@ function syncLine(){
 }
 
 function viewToday(){
-  const ls = leads(); const waiting = ls.filter(l => l.rank === 0); const due = ls.filter(l => l.rank > 0 && l.rank <= 3);
-  const todoN = pendingTodo().length;
+  const today = new Date().toLocaleDateString('en-US',{timeZone:CFG.tz, weekday:'long', day:'numeric', month:'short'});
+  const ls = leads(); const todo = S.todo || [];
+  const pend = todo.filter(t => t.status === 'pending_approval');
+  const approved = todo.filter(t => t.status === 'approved');
+  const held = todo.filter(t => t.status === 'held');
+  const due = S.due || [];
+  const hasDraft = id => todo.some(t => t.school_id === id);
+  const newReplies = ls.filter(l => l.lastIn && daysSince(l.lastIn.at) <= 7).sort((a,b) => String(b.lastIn.at).localeCompare(String(a.lastIn.at)));
+  const unanswered = ls.filter(l => l.waiting && !hasDraft(l.id));
+  const actionN = pend.length + held.length + (due.length || unanswered.length ? 1 : 0);
+  const run = nextSendRun();
+  const coldNext = (S.sched||[]).filter(r => r.send_date === run);
   const wk = S.week && S.week.week === WEEK0 ? S.week.rows : [];
   const sentWeek = wk.reduce((n,r) => n + (+r.sent_week||0), 0);
   const repliesWeek = ls.filter(l => l.lastIn && dayOf(l.lastIn.at) >= WEEK0).length;
-  const bankN = (S.bank||[]).length;
-  const n = waiting.length + due.length + todoN;
-  const today = new Date().toLocaleDateString('en-US',{timeZone:CFG.tz, weekday:'long', day:'numeric', month:'short'});
+
   let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><div class="eyebrow">Cyber Square · Sales</div><h1>${esc(today)}</h1>
-    <div class="sub">${S.busy.schools ? 'Checking the database…' : n ? `${n} thing${n>1?'s':''} need you` : 'Nothing urgent right now'}</div></div>${syncButton()}</header>`;
+    <div class="sub">${S.busy.schools && !S.schools ? 'Loading…' : actionN ? `${actionN} thing${actionN>1?'s':''} for you to do` : 'Nothing needs you right now'}</div></div>${syncButton()}</header>`;
   h += syncStatus();
-  h += sectionErr('schools','stats');
-  h += `<section class="stack"><h2 class="sec">Needs you</h2>`;
-  if(todoN){
-    const t0 = pendingTodo();
+  h += sectionErr('schools','stats','todo');
+
+  /* 1. what only you can do */
+  h += `<section class="stack"><h2 class="sec">For you to do</h2>`;
+  if(pend.length){
     h += `<button type="button" class="tap" data-act="openreview" style="border:2px solid var(--accent)"><span class="ico" style="background:var(--bad-bg);color:var(--bad-fg)">${svg('check')}</span>
-      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="xs b" style="color:var(--bad-fg)">Needs review</span><span class="xs muted">nothing sends until you approve</span></span>
-      <span class="b">${todoN} email${todoN>1?'s':''} drafted by Claude</span><span class="small muted clamp2">${esc(t0.slice(0,3).map(t => t.school).join(', '))}${todoN > 3 ? ' and more' : ''}</span></span>${svg('chev',18,2)}</button>`;
+      <span class="stack" style="gap:3px;flex:1;min-width:0"><span class="between"><span class="b">Approve ${pend.length} email${pend.length>1?'s':''}</span>${approvalBadge('pending_approval')}</span>
+      <span class="small muted clamp2">${esc(pend.slice(0,4).map(t => t.school).join(', '))}${pend.length > 4 ? ' and more' : ''}</span>
+      <span class="xs muted">Drafted by Claude. Approve before 9:30 am to send ${esc(dayLabel(run).toLowerCase())}.</span></span>${svg('chev',18,2)}</button>`;
   }
-  waiting.forEach(l => { h += leadTap(l, 'bad', 'reply', l.lastIn && l.lastIn.unsynced ? 'Reply waiting · new in Gmail' : 'Reply waiting', l.lastIn ? rel(l.lastIn.at) : '', l.lastIn ? `“${String(l.lastIn.text||'').slice(0,120)}”` : ''); });
-  due.slice(0,6).forEach(l => { h += leadTap(l, l.tone === 'warn' ? 'proposal' : 'bad', 'clock', l.tone === 'warn' ? 'Follow up' : 'To do', l.lastAt ? 'last ' + rel(l.lastAt) : '', l.nextLabel); });
-  if(!waiting.length && !due.length && !todoN) h += (S.busy.schools && !S.schools ? skel(2) : `<div class="card empty">You’re up to date.</div>`);
-  if(due.length > 6) h += `<button type="button" class="btn full" data-act="tab" data-k="pipeline">See all ${due.length} follow-ups</button>`;
+  if(held.length) h += `<button type="button" class="tap" data-act="openreview"><span class="ico" style="background:var(--neutral-bg);color:var(--neutral-fg)">${svg('alert')}</span>
+      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="b">${held.length} held email${held.length>1?'s':''} to re-check</span><span class="small muted clamp2">${esc(held.map(t => t.school).join(', '))}</span></span>${svg('chev',18,2)}</button>`;
+  const noDraft = due.length || unanswered.length;
+  if(noDraft){
+    const names = [...new Set([...unanswered.map(l => l.school), ...due.map(x => ((S.schools||[]).find(sc => sc.id === x.id) || {}).school || x.id)])];
+    const p = S.prep || {};
+    h += `<div class="card stack" style="gap:10px"><div class="row" style="align-items:flex-start"><span class="ico" style="background:var(--claude-soft);color:var(--claude)">${svg('spark')}</span>
+      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="b">${names.length} conversation${names.length>1?'s':''} need an email, no draft yet</span><span class="small muted clamp2">${esc(names.slice(0,4).join(', '))}${names.length > 4 ? ' and more' : ''}</span></span></div>
+      <button type="button" class="btn accent full" data-act="prepare" ${p.running || !S.sample ? 'disabled' : ''}>${p.running ? '<span class="spin"></span> ' + esc(p.step) : svg('spark',16) + ' Draft them with Claude'}</button>
+      ${p.result ? `<div class="xs" style="color:var(--won-fg)">${esc(p.result)}</div>` : ''}<span class="xs muted">Or wait: Claude’s evening prep drafts them at 8 pm.</span></div>`;
+  }
+  if(!pend.length && !held.length && !noDraft) h += (S.busy.todo && !S.todo ? skel(1) : `<div class="card empty">You’re all caught up. Claude will put new drafts here for your approval.</div>`);
   h += `</section>`;
+
+  /* 2. what goes out next, automatically */
+  h += `<section class="stack"><h2 class="sec">Going out ${esc(dayLabel(run).toLowerCase())} · 9:30 am</h2>`;
+  h += `<button type="button" class="tap" data-act="openreview"><span class="ico" style="background:var(--won-bg);color:var(--won-fg)">${svg('reply')}</span>
+      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b">${approved.length} repl${approved.length === 1 ? 'y' : 'ies'} & follow-up${approved.length === 1 ? '' : 's'}</span>${approvalBadge('approved','reply')}</span>
+      <span class="small muted clamp2">${approved.length ? esc(approved.slice(0,4).map(t => t.school).join(', ')) : 'Nothing approved yet'}</span></span>${svg('chev',18,2)}</button>`;
+  h += `<button type="button" class="tap" data-act="tab" data-k="outreach"><span class="ico" style="background:var(--replied-bg);color:var(--replied-fg)">${svg('send')}</span>
+      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b">${coldNext.length} cold email${coldNext.length === 1 ? '' : 's'}</span>${approvalBadge('approved','cold_auto')}</span>
+      <span class="small muted">${coldNext.length ? `${coldNext.filter(r => r.touch == 1).length} first emails · ${coldNext.filter(r => r.touch > 1).length} follow-ups` : 'No cold batch planned for this send'}</span></span>${svg('chev',18,2)}</button>`;
+  h += `</section>`;
+
+  /* 3. what came in */
+  h += `<section class="stack"><h2 class="sec">Replies in the last 7 days</h2>`;
+  if(!newReplies.length) h += `<div class="card empty">No new replies from schools this week.</div>`;
+  else h += `<div class="list">` + newReplies.slice(0,6).map(l => { const t = todo.find(x => x.school_id === l.id);
+      const state = t ? approvalBadge(t.status, t.kind) : l.waiting ? `<span class="pill" style="background:var(--proposal-bg);color:var(--proposal-fg)">No draft yet</span>` : `<span class="pill" style="background:var(--neutral-bg);color:var(--neutral-fg)">Answered</span>`;
+      return `<button type="button" class="row" data-act="lead" data-k="${esc(l.key)}" style="width:100%;text-align:left;border:none;background:var(--surface);padding:12px 16px;gap:12px;align-items:flex-start">
+        <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b small">${esc(l.school)}</span><span class="xs muted">${esc(rel(l.lastIn.at))}</span></span>
+        <span class="small muted clamp2">“${esc(String(l.lastIn.text||'').slice(0,140))}”</span></span>${state}</button>`; }).join('') + `</div>`;
+  h += `</section>`;
+
+  /* 4. the week in numbers */
   h += `<section class="stack"><h2 class="sec">This week</h2><div class="grid4">
     <div class="stat"><span class="v">${sentWeek}</span><span class="k">Cold sent</span></div>
     <div class="stat"><span class="v" style="color:var(--replied-fg)">${repliesWeek}</span><span class="k">Replies</span></div>
     <div class="stat"><span class="v" style="color:var(--meeting-fg)">${stageCount('meeting_booked')}</span><span class="k">Meetings</span></div>
-    <div class="stat"><span class="v" style="color:var(--proposal-fg)">${stageCount('proposal_sent')}</span><span class="k">Proposals</span></div></div></section>`;
-  const nx = (S.sched||[]); if(nx.length){ const d0 = nx[0].send_date; const n0 = nx.filter(r => r.send_date === d0);
-    h += `<button type="button" class="tap" data-act="tab" data-k="outreach"><span class="ico" style="background:var(--accent-soft);color:var(--accent-fg)">${svg('cal')}</span>
-      <span class="stack" style="gap:2px;flex:1"><span class="b">Next send · ${esc(dayLabel(d0))}</span><span class="small muted">${n0.filter(r => r.touch == 1).length} first emails · ${n0.filter(r => r.touch > 1).length} follow-ups · ${n0[0].source === 'drafted' ? 'drafted' : 'planned'}</span></span>${svg('chev',18,2)}</button>`; }
-  h += `<button type="button" class="tap" data-act="tab" data-k="bank" style="background:var(--inv);color:var(--inv-ink);border-color:var(--inv)"><span class="ico" style="background:var(--inv-2);color:var(--won-fg)">${svg('db')}</span>
-    <span class="stack" style="gap:2px;flex:1"><span class="b">Lead Bank · ${bankN} schools ready</span><span class="small" style="color:var(--inv-muted)">${(S.bank||[]).filter(b => b.email_type==='direct').length} direct emails · ${(S.bank||[]).filter(b => (b.sources||[]).includes('lead_finder')).length} from the Lead Finder</span></span>${svg('chev',18,2)}</button>`;
-  h += syncLine();
+    <div class="stat"><span class="v" style="color:var(--proposal-fg)">${stageCount('proposal_sent')}</span><span class="k">Proposals</span></div></div>
+    <button type="button" class="btn full" data-act="tab" data-k="bank">${svg('db',16)} ${(S.bank||[]).length} schools waiting in the Lead Bank</button></section>`;
+
+  /* 5. are the Claude tasks running */
+  h += agentStatus();
   return h;
+}
+function agentStatus(){
+  const st = S.stats; if(!st) return '';
+  const runs = st.runs || []; const get = a => runs.find(r => r.agent === a);
+  const rows = [
+    ['Evening prep', 'Drafts approvals + cold batch · daily 8 pm', get('evening_prep') || get('evening_review')],
+    ['Morning sender', 'Sends approved emails · weekdays 9:30 am', get('morning_sender')],
+    ['Lead finder', 'Adds new schools · daily 6 pm', get('lead_finder')],
+    ['Gmail sync', 'Last synced into the database', {started_at: st.synced, outcome:'ok'}]
+  ];
+  return `<section class="stack"><h2 class="sec">Claude’s tasks</h2><div class="list">` + rows.map(([name, what, r]) => {
+    const ok = r && r.started_at && (!r.outcome || /^(ok|success|done|completed)/i.test(r.outcome));
+    const bad = r && r.outcome && !ok; const never = !r || !r.started_at;
+    const key = never ? 'neutral' : bad ? 'bad' : 'won';
+    return `<div class="between" style="padding:12px 16px"><span class="stack" style="gap:0;min-width:0"><span class="b small">${name}</span><span class="xs muted">${what}</span></span>
+      <span class="pill" style="background:var(--${key}-bg);color:var(--${key}-fg)">${never ? 'Not run yet' : bad ? 'Problem ' + esc(rel(r.started_at)) : esc(rel(r.started_at))}</span></div>`; }).join('') + `</div></section>`;
 }
 function touchMix(items){ const m = {}; items.forEach(i => { const k = 'Touch ' + (i.touch || '?'); m[k] = (m[k]||0)+1; }); return Object.entries(m).sort().map(([k,v]) => `${v} ${k}`).join(' · '); }
 function leadTap(l, key, icon, label, when, text){

@@ -9,7 +9,8 @@ Google Sheets are not used.
 
 | Screen | Reads |
 |---|---|
-| Today / Pipeline | `schools` in stages engaged, meeting_booked, proposal_sent, client (or with replies), their `contacts`, and the latest `messages`. Follow-ups = our emails after the school's first reply. |
+| Today | For you to do (`planned_actions` pending_approval / held, conversations due with no draft), going out at the next 9:30 am send (approved replies/follow-ups + that day's cold batch from `outreach_schedule`), replies in the last 7 days, this week's numbers, and the last run of each Claude task (`agent_runs`, `sync_state`) |
+| Pipeline | `schools` in stages engaged, meeting_booked, proposal_sent, client (or with replies), their `contacts`, and the latest `messages`. Follow-ups = our emails after the school's first reply. |
 | Lead detail | `school_timeline` (emails + activities) and `messages` |
 | Review → Prepare drafts now | Finds conversations needing an email (same rules as Evening Prep Step 3: unanswered replies in `awaiting_our_reply`, and `managed_by_ijas` schools whose `next_action_date` is due or with no email from us in 10+ days, skipping any with an active `planned_actions` row). Claude drafts each; a Gmail draft and a `planned_actions` row (`pending_approval`) are created. |
 | Review tab | `planned_actions` kind `reply` / `follow_up` with status `pending_approval`, `held` or `approved` |
