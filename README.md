@@ -11,7 +11,7 @@ Google Sheets are not used.
 |---|---|
 | Today / Pipeline | `schools` in stages engaged, meeting_booked, proposal_sent, client (or with replies), their `contacts`, and the latest `messages`. Follow-ups = our emails after the school's first reply. |
 | Lead detail | `school_timeline` (emails + activities) and `messages` |
-| Outreach → Up next | `outreach_schedule(15)`: every school due in the next 15 send days, by day. Drafted batches (`planned_actions`) show first with Approve / Hold. Tap a school for its full history. |
+| Outreach → Up next | `outreach_schedule(15)` grouped into batches: each send day has a **First emails** batch and a **Follow-ups** batch (follow-up 1 + final). Tap a batch for its schools, the email they get (`email_templates` touch*_v2, or the drafted email from `planned_actions`) and Approve / Hold. Tap a school for its full history. |
 | Outreach → Sent this week | `outreach_contacts` touched this week, plus `planned_actions` for this week |
 | Lead Bank | `outreach_due` where `next_touch = 1`; counts from `schools` |
 | Sync banner | `sync_state.gmail_synced_through`, latest `agent_runs` per agent |
