@@ -11,7 +11,7 @@ Google Sheets are not used.
 |---|---|
 | Today / Pipeline | `schools` in stages engaged, meeting_booked, proposal_sent, client (or with replies), their `contacts`, and the latest `messages`. Follow-ups = our emails after the school's first reply. |
 | Lead detail | `school_timeline` (emails + activities) and `messages` |
-| Outreach → Review | `planned_actions` kind `reply` / `follow_up` with status `pending_approval`, `held` or `approved` |
+| Review tab | `planned_actions` kind `reply` / `follow_up` with status `pending_approval`, `held` or `approved` |
 | Outreach → Up next | `outreach_schedule(15)` grouped into batches: each send day has a **First emails** batch and a **Follow-ups** batch (follow-up 1 + final), all pre-approved cold outreach. Tap a batch for its schools and the email they get; tap a school for its full history. |
 | Outreach → Sent this week | `outreach_contacts` touched this week, plus `planned_actions` for this week |
 | Lead Bank | `outreach_due` where `next_touch = 1`; counts from `schools` |
@@ -71,8 +71,8 @@ Sync again is always safe.
 |---|---|
 | Change stage | `schools.stage`, `status_note`, `next_action(_date)`; `managed_by_ijas = true` for Replied / Meeting / Proposal / Client / Closed lost; `do_not_contact` for Do not contact; plus an `activities` row (`status_change`, source `cs-tracker-app`) |
 | Add note | `activities` row (`note`), optional `next_action(_date)` |
-| Reply with Claude → Send | Gmail reply in the same thread, then `ingest_message(…, 'personal')` and `recompute_school_stats()` |
-| Save to Gmail drafts | Gmail draft + `activities` note |
+| Reply with Claude → Approve & queue | Gmail draft (threaded) + `planned_actions` row, kind `reply` (answering their last message) or `follow_up`, status `approved`, `planned_for` = next 9:30 am send. Nothing is sent from the app directly. |
+| Reply with Claude → Save for review | Same row with status `pending_approval`; it waits in the Review tab until approved |
 | Review → Approve | `planned_actions.status = 'approved'`, `approved_by`, `approved_at` (+ `activities` note) |
 | Review → Undo approval / Don't send | status back to `pending_approval` / `rejected` |
 | Review → Edit with Claude → Save | `planned_actions.subject/body` and the Gmail draft (`update_draft`; if that fails, `draft_id` is cleared so the sender rebuilds the email from the saved text) |

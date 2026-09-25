@@ -700,13 +700,13 @@ function render(){
   renderTabs();
   const v = $('#view');
   if(S.noRuntime){ v.innerHTML = noRuntime(); $('#actionbar').innerHTML = ''; return; }
-  v.innerHTML = S.lead ? viewLead() : ({today:viewToday, pipeline:viewPipeline, outreach:viewOutreach, bank:viewBank})[S.tab]();
+  v.innerHTML = S.lead ? viewLead() : ({today:viewToday, pipeline:viewPipeline, review:viewReview, outreach:viewOutreach, bank:viewBank})[S.tab]();
   renderActionbar(); renderOverlay();
 }
 function renderTabs(){
   const needs = leads().filter(l => l.rank <= 1).length;
   const pendingBatch = pendingTodo().length;
-  const t = [['today','Today','home', needs], ['pipeline','Pipeline','pipe', 0], ['outreach','Outreach','send', pendingBatch], ['bank','Lead Bank','db', 0]];
+  const t = [['today','Today','home', needs], ['pipeline','Pipeline','pipe', 0], ['review','Review','check', pendingBatch], ['outreach','Outreach','send', 0], ['bank','Leads','db', 0]];
   $('#tabs').innerHTML = t.map(([k,l,i,b]) => `<button type="button" data-act="tab" data-k="${k}" ${S.tab===k && !S.lead ? 'aria-current="page"' : ''}><span class="pad">${svg(i,22,1.8)}</span><span>${l}</span>${b ? `<span class="badge" aria-label="${b} need attention">${b}</span>` : ''}</button>`).join('');
 }
 function noRuntime(){
@@ -798,7 +798,7 @@ function viewPipeline(){
 
 function viewLead(){
   const l = findSchool(S.lead);
-  const backTo = ({today:'Today', pipeline:'Pipeline', outreach:'Outreach', bank:'Lead Bank'})[S.tab] || 'Back';
+  const backTo = ({today:'Today', pipeline:'Pipeline', review:'Review', outreach:'Outreach', bank:'Lead Bank'})[S.tab] || 'Back';
   if(!l) return `<button type="button" class="back" data-act="back">${svg('back',20,2)} ${esc(backTo)}</button>` + sectionErr('lead') + skel(3);
   const d = S.detail[l.id]; const step = (STAGES[l.stage]||{}).step || 0; const hot = HOT.includes(l.stage);
   const upcoming = nextSends(l.id); const drafted = (S.batch||[]).find(b => b.school_id === l.id && b.status === 'planned');
@@ -882,7 +882,6 @@ function batchState(b){
 }
 function batchTitle(b){ return b.kind === 'first' ? 'First emails' : 'Follow-ups'; }
 function viewUpcoming(){
-  if(S.reviewOpen) return viewReview();
   if(S.batchKey) return viewBatchDetail();
   let h = sectionErr('sched','batch','todo');
   const pend = pendingTodo(), appr = (S.todo||[]).filter(t => t.status === 'approved');
@@ -915,8 +914,8 @@ function viewUpcoming(){
   return h;
 }
 function viewReview(){
-  let h = `<button type="button" class="back" data-act="closereview">${svg('back',20,2)} Outreach</button>`;
-  h += `<header class="stack" style="gap:4px"><h1 style="font-size:26px">Review</h1><div class="sub">Replies and follow-ups to schools that have replied. Approved emails go out at the next 9:30 am send (${esc(dayLabel(nextSendRun()))}); anything not approved is never sent.</div></header>`;
+  let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><h1>Review</h1></div>${refreshBtn(S.busy.todo)}</header>`;
+  h += `<header class="stack" style="gap:4px"><div class="sub">Replies and follow-ups to schools that have replied. Approved emails go out at the next 9:30 am send (${esc(dayLabel(nextSendRun()))}); anything not approved is never sent. Drafts wait here until you decide, however long that takes.</div></header>`;
   h += sectionErr('todo');
   const list = S.todo;
   if(!list) return h + (S.busy.todo ? skel(3) : '');
@@ -1077,8 +1076,9 @@ function overlayComposer(){
       <button type="button" class="btn full" data-act="regen" ${c.streaming || c.loading || !S.sample ? 'disabled' : ''}>${c.streaming ? '<span class="spin"></span> Writing' : svg('refresh',16,2) + ' Regenerate'}</button>
       ${c.review ? `<div class="grid2"><button type="button" class="btn" data-act="savereview" ${c.busy || !v || c.streaming ? 'disabled' : ''}>Save, keep in review</button>
       <button type="button" class="btn primary" data-act="saveapprove" ${c.busy || !v || c.streaming ? 'disabled' : ''} style="height:48px">${c.busy ? '<span class="spin"></span>' : svg('check',16,2.4) + ' Save & approve'}</button></div>
-      <div class="xs muted">Approved emails go out at the next 9:30 am send (${esc(dayLabel(nextSendRun()))}).</div>` : `<div class="grid2"><button type="button" class="btn" data-act="savedraft" ${c.busy || !v ? 'disabled' : ''}>Save to Gmail drafts</button>
-      <button type="button" class="btn ${c.confirm ? 'danger' : 'primary'}" data-act="sendreply" ${c.busy || !v || c.streaming ? 'disabled' : ''} style="height:48px">${c.busy ? '<span class="spin"></span>' : c.confirm ? 'Tap again to send' : svg('send',16,2) + ' Send'}</button></div>`}
+      <div class="xs muted">Approved emails go out at the next 9:30 am send (${esc(dayLabel(nextSendRun()))}).</div>` : `<div class="grid2"><button type="button" class="btn" data-act="queuereview" ${c.busy || !v || c.streaming ? 'disabled' : ''}>Save for review</button>
+      <button type="button" class="btn primary" data-act="queueapprove" ${c.busy || !v || c.streaming ? 'disabled' : ''} style="height:48px">${c.busy ? '<span class="spin"></span>' : svg('check',16,2.4) + ' Approve & queue'}</button></div>
+      <div class="xs muted">Approved emails are sent at the next 9:30 am send (${esc(dayLabel(nextSendRun()))}). Nothing is sent from here directly.</div>`}
     </div></section></div>`;
 }
 function overlayModal(){
@@ -1169,6 +1169,34 @@ async function draft(regen){
   }
   c.streaming = false; render();
 }
+/* Put a Claude-drafted email into the send queue (planned_actions), approved or waiting for review.
+   The Morning Sender sends approved rows at 9:30 am; pending ones wait here until approved. */
+async function queueEmail(approve){
+  const c = S.composer; const l = c.lead; const body = (document.getElementById('cmp-body') || {}).value || '';
+  if(!body.trim()){ c.error = 'Write something first.'; return render(); }
+  if(!c.to){ c.error = 'No email address for this school.'; return render(); }
+  c.busy = true; c.error = ''; render();
+  let draft = null;
+  try { draft = await gm('create_draft', Object.assign({to:[c.to], subject:c.subject, body}, c.replyTo ? {replyToMessageId:c.replyTo} : {})); } catch(e){ draft = null; }
+  const known = l.contacts.map(x => String(x.email||'').toLowerCase());
+  const contact = known.includes(String(c.to).toLowerCase()) ? c.to : (l.email || null);
+  const isReply = !!(l.waiting && l.lastIn);
+  const thread = (draft && draft.threadId) || (l.lastIn && l.lastIn.thread) || (l.lastMsg && l.lastMsg.thread) || null;
+  const summary = (isReply ? 'Reply' : 'Follow-up') + ' written in app' + (c.to !== contact ? ` (to ${c.to})` : '');
+  try {
+    await sql(`with p as (insert into planned_actions (school_id, contact_email, planned_for, action, kind, status, draft_id, subject, body, thread_id,
+        answers_message_id, reply_to_message_id, context, created_by, reason, approved_at, approved_by)
+      values (${lit(l.id)}, ${lit(contact)}, ${lit(nextSendRun())}::date, ${lit(isReply ? 'reply' : 'follow_up')}, ${lit(isReply ? 'reply' : 'follow_up')},
+        ${approve ? "'approved'" : "'pending_approval'"}, ${lit(draft && draft.id)}, ${lit(c.subject)}, ${lit(body)}, ${lit(thread)},
+        ${lit(isReply ? l.lastIn.id : null)}, ${lit(c.replyTo)}, ${lit(summary)}, 'cs-tracker-app', ${lit(summary)},
+        ${approve ? 'now()' : 'null'}, ${approve ? lit('Ijas (CS Tracker app)') : 'null'}) returning id, school_id)
+      insert into activities (school_id, occurred_at, kind, summary, source)
+      select school_id, now(), 'note', ${lit((approve ? 'Approved & queued in app: ' : 'Saved for review in app: ') + c.subject)}, 'cs-tracker-app' from p returning school_id`, true);
+  } catch(e){ c.busy = false; c.error = 'Not queued. ' + errText(e, CFG.supabase); return render(); }
+  S.composer = null;
+  toast(approve ? `Approved · sends ${dayLabel(nextSendRun())} 9:30 am` : 'Saved in Review · approve it any time');
+  await loadTodo(); render();
+}
 async function sendReply(asDraft){
   const c = S.composer; const l = c.lead; const body = (document.getElementById('cmp-body') || {}).value || '';
   if(!body.trim()){ c.error = 'Write something first.'; return render(); }
@@ -1207,7 +1235,7 @@ document.addEventListener('click', async ev => {
     case 'day': S.openDays.has(k) ? S.openDays.delete(k) : S.openDays.add(k); render(); break;
     case 'batch': S.batchKey = k; render(); window.scrollTo(0,0); break;
     case 'closebatch': S.batchKey = null; render(); break;
-    case 'openreview': S.tab = 'outreach'; S.weekTab = 'next'; S.lead = null; S.batchKey = null; S.reviewOpen = true; lsSet('tab','outreach'); render(); window.scrollTo(0,0); loadTodo(); break;
+    case 'openreview': S.tab = 'review'; S.lead = null; S.batchKey = null; S.reviewOpen = false; lsSet('tab','review'); render(); window.scrollTo(0,0); loadTodo(); break;
     case 'closereview': S.reviewOpen = false; render(); break;
     case 'approve': case 'unapprove': case 'reject': {
       const t = (S.todo||[]).find(x => String(x.id) === k); if(!t) break;
@@ -1229,12 +1257,11 @@ document.addEventListener('click', async ev => {
       S.busy.flag = false; render(); } break;
     case 'back': S.lead = null; render(); break;
     case 'reloadlead': if(S.lead){ loadSchools(); if(S.extra[S.lead]) loadOne(S.lead); loadDetail(S.lead); } break;
-    case 'compose': { const l = findSchool(S.lead); if(l) openComposer(l); } break;
+    case 'compose': { const l = findSchool(S.lead); if(!l) break; const open = (S.todo||[]).find(t => t.school_id === l.id && ['pending_approval','held','approved'].includes(t.status)); openComposer(l, open); } break;
     case 'closeov': S.composer = null; S.modal = null; render(); break;
     case 'ver': { const c = S.composer; c.idx = Math.max(0, Math.min(c.versions.length-1, c.idx + (+k))); c.confirm = false; render(); } break;
     case 'hint': { const c = S.composer; c.ask = (document.getElementById('cmp-ask')||{}).value || c.ask; c.hint = c.hint === k ? '' : k; render(); } break;
     case 'regen': { const c = S.composer; c.ask = (document.getElementById('cmp-ask')||{}).value || ''; draft(true); } break;
-    case 'sendreply': sendReply(false); break;
     case 'savereview': case 'saveapprove': {
       const c = S.composer; const t = c.review; const body = (document.getElementById('cmp-body')||{}).value || '';
       if(!body.trim()){ c.error = 'The email is empty.'; render(); break; }
@@ -1243,7 +1270,7 @@ document.addEventListener('click', async ev => {
         if(act === 'saveapprove'){ const ok = await setApproval(t, 'approved'); if(!ok) throw {message:'This email changed since you opened it (it may already be sent or rejected).'}; }
         S.composer = null; toast(act === 'saveapprove' ? `Approved · sends ${dayLabel(nextSendRun())} 9:30 am` : 'Saved · still needs review'); await loadTodo(); }
       catch(e){ c.busy = false; c.error = 'Not saved. ' + errText(e, CFG.supabase); render(); } } break;
-    case 'savedraft': sendReply(true); break;
+    case 'queuereview': case 'queueapprove': queueEmail(act === 'queueapprove'); break;
     case 'stage': case 'note': { const l = findSchool(S.lead); if(l){ S.modal = {kind:act, lead:l}; render(); } } break;
     case 'savemodal': {
       const m = S.modal; const note = ($('#md-note')||{}).value.trim(); const nextA = ($('#md-next')||{}).value.trim(); const nextD = ($('#md-date')||{}).value;
