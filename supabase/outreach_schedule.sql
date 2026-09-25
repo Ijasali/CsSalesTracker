@@ -1,3 +1,0 @@
--- Applied to Supabase project abylyjqplyxrpexwyufi as migration "outreach_schedule_projects_followups".
--- Upcoming outreach by send day. See README ("Outreach schedule").
--- Source of truth is the database; this file is a copy for review.
