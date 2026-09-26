@@ -343,6 +343,8 @@ const acct = id => B().accounts.find(a => a.id === id);
 const cat = id => B().cats.find(c => c.id === id);
 function catName(id){ const c = cat(id); if(!c) return 'Uncategorized'; const p = c.pid && cat(c.pid); return p ? p.name + ' · ' + c.name : c.name; }
 const topName = id => { const c = cat(id); return c ? c.name : 'Uncategorized'; };
+// The Joint choice only appears while some account has no single owner.
+const hasJoint = () => B().accounts.some(a => !a.owner);
 function member(id){ return B().members.find(m => m.id === id); }
 function ownerKey(a){ if(!a.owner) return 'joint'; const ms = B().members; return ms[0] && a.owner === ms[0].id ? 'm0' : 'm1'; }
 function ownerBadge(a){
@@ -588,7 +590,7 @@ function viewHome(){
   let h = `<main>${hdr('Your money', d, `<div class="row">${S.web ? `<button class="icon-btn" data-act="people" aria-label="Household and sign out">${svg('user', 18)}</button>` : ''}<button class="icon-btn" data-act="reload" aria-label="Refresh">${svg('refresh', 18)}</button></div>`)}`;
   if(B().review > 0) h += `<button class="banner" data-act="review" style="border:0;text-align:left;cursor:pointer">${svg('alert', 18)}<span><b>${B().review}</b> transaction${B().review > 1 ? 's' : ''} need a category check. Tap to review.</span></button>`;
   h += `<section class="hero" aria-label="Net worth"><div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Household net worth</span><span class="big">${cad(tot.net)}</span>
-    <div class="row wrap xs" style="column-gap:12px;row-gap:2px;color:var(--hero-muted)">${ms.map((m, i) => `<span>${esc(m.name)} <b style="color:var(--hero-ink)">${cad(tot.byOwner['m' + i] || 0)}</b></span>`).join('')}<span>Joint <b style="color:var(--hero-ink)">${cad(tot.byOwner.joint || 0)}</b></span></div>${nwNote(tot)}</div>
+    <div class="row wrap xs" style="column-gap:12px;row-gap:2px;color:var(--hero-muted)">${ms.map((m, i) => `<span>${esc(m.name)} <b style="color:var(--hero-ink)">${cad(tot.byOwner['m' + i] || 0)}</b></span>`).join('')}${hasJoint() ? `<span>Joint <b style="color:var(--hero-ink)">${cad(tot.byOwner.joint || 0)}</b></span>` : ''}</div>${nwNote(tot)}</div>
     <div class="tiles"><button class="tile" data-act="tab" data-v="accounts"><span class="k">Bank & cash</span><span class="v">${cad0(tot.bank)}</span></button><button class="tile" data-act="tab" data-v="accounts"><span class="k">Investments</span><span class="v">${cad0(tot.inv)}</span></button><button class="tile" data-act="tab" data-v="accounts"><span class="k">Owed</span><span class="v owed">${cad0(tot.owed)}</span></button></div></section>`;
   if(S.err.month) h += banner(S.err.month, true);
   if(!md) h += `<div class="skel">Loading ${esc(mLabel(S.month))}…</div>`;
@@ -628,8 +630,9 @@ function txRow(t){
 
 /* ---- accounts ---- */
 function viewAccounts(){
+  if(S.owner === 'joint' && !hasJoint()) S.owner = 'all';
   const ms = B().members; const own = S.owner;
-  const opts = [['all', 'Everyone'], ...ms.map((m, i) => ['m' + i, m.name]), ['joint', 'Joint']];
+  const opts = [['all', 'Everyone'], ...ms.map((m, i) => ['m' + i, m.name]), ...(hasJoint() ? [['joint', 'Joint']] : [])];
   const tot = totals(own);
   let h = `<main>${hdr('Accounts')}<div class="seg" role="group" aria-label="Whose accounts" style="grid-template-columns:repeat(${opts.length},minmax(0,1fr))">${opts.map(o => `<button data-act="owner" data-v="${o[0]}" aria-pressed="${own === o[0]}">${esc(o[1])}</button>`).join('')}</div>
     <section class="hero" aria-label="Summary"><span class="lbl">${own === 'all' ? 'Household net worth' : (own === 'joint' ? 'Joint net worth' : esc(ms[+own.slice(1)].name) + '’s net worth')}</span><span class="big">${cad(tot.net)}</span>${nwNote(tot)}
