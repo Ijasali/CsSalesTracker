@@ -656,7 +656,7 @@ function viewAccounts(){
   const hidden = accs.filter(a => !a.active);
   if(hidden.length){
     h += `<button class="link" data-act="hidden" style="align-self:flex-start">${S.showHidden ? 'Hide' : 'Show'} ${hidden.length} inactive account${hidden.length > 1 ? 's' : ''}</button>`;
-    if(S.showHidden) h += `<section class="card tight"><div class="list">${hidden.map(acctRow).join('')}</div><span class="xs muted" style="padding-bottom:10px">No activity in the last 18 months. They never count in net worth.</span></section>`;
+    if(S.showHidden) h += `<section class="card tight"><div class="list">${hidden.map(acctRow).join('')}</div><span class="xs muted" style="padding-bottom:10px">Inactive accounts are kept with their history but never count in totals. Open one to make it active again.</span></section>`;
   }
   return h + `</main>`;
 }
@@ -834,7 +834,11 @@ function viewBudYear(){
 /* ---- transactions ---- */
 function viewTxns(){
   const title = S.txReview ? 'To review' : (S.txAcct ? (acct(S.txAcct) || {}).name || 'Transactions' : 'Transactions');
-  let h = `<main>${hdr(title, S.txAcct && acct(S.txAcct) ? 'Balance ' + cad(acct(S.txAcct).bal) : null, null, true)}
+  const ta = S.txAcct && acct(S.txAcct);
+  let h = `<main>${hdr(title, ta ? 'Balance ' + cad(ta.bal) + (ta.active ? '' : ' · inactive') : null, null, true)}`;
+  if(ta && !S.txReview) h += `<button class="link" data-act="acctactive" data-id="${ta.id}" style="align-self:flex-start;margin-top:-8px${ta.active ? ';color:var(--muted)' : ''}"${S.busy.active ? ' disabled' : ''}>${ta.active ? 'Make this account inactive' : 'Make this account active again'}</button>`;
+  if(S.err.active) h += banner(S.err.active, true);
+  h += `
     <label class="row inp" style="gap:10px;color:var(--muted)">${svg('search', 18)}<span style="position:absolute;width:1px;height:1px;overflow:hidden">Search transactions</span><input id="txq" type="search" placeholder="Search payee, note or category" value="${esc(S.txq)}" style="flex:1;border:0;outline:none;background:transparent;min-height:44px;font-size:15px"></label>
     <div class="chips" role="group" aria-label="Filter">${[['all','All'],['expense','Expenses'],['income','Income'],['transfer','Transfers']].map(o => `<button class="chip" data-act="txkind" data-v="${o[0]}" aria-pressed="${S.txKind === o[0]}">${o[1]}</button>`).join('')}
     <select id="txacct" class="chip" aria-label="Account" style="appearance:auto"><option value="">All accounts</option>${acctOptions(S.txAcct)}</select></div>`;
@@ -1016,6 +1020,15 @@ async function removeBud(){
   catch(e){ S.busy.budget = false; S.err.budget = errText(e); render(); }
 }
 
+async function setActive(id){
+  const a = acct(id); if(!a) return;
+  delete S.err.active; S.busy.active = true; render();
+  try {
+    await api('app_set_account_active', {id, active: !a.active}, true);
+    a.active = !a.active; toast(a.active ? a.name + ' is active again' : a.name + ' is now inactive');
+  } catch(e){ S.err.active = 'Not saved. ' + errText(e); }
+  S.busy.active = false; render();
+}
 async function setNetWorth(ids, on){
   delete S.err.nw;
   const prev = {}; B().accounts.forEach(a => { if(ids.includes(a.id)){ prev[a.id] = a.nw; a.nw = on; } });
@@ -1162,6 +1175,7 @@ document.addEventListener('click', e => {
     case 'owner': S.owner = el.dataset.v; render(); break;
     case 'hidden': S.showHidden = !S.showHidden; render(); break;
     case 'countall': S.countAll = !S.countAll; store('countAll', S.countAll); render(); break;
+    case 'acctactive': setActive(el.dataset.id); break;
     case 'nweye': { const a = acct(el.dataset.id); if(a) setNetWorth([a.id], !a.nw); break; }
     case 'inskind': S.insKind = el.dataset.v; render(); break;
     case 'netsel': setMonth(el.dataset.m); break;
