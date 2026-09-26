@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Budgets</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&amp;family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F2ED;font-family:Manrope,system-ui,sans-serif;color:#15171A;font-variant-numeric:tabular-nums}
+a{color:#1D5FB4}a:hover{color:#154A8C}
+</style>
+</helmet>
+<div style="width: 390px; height: 1300px; box-sizing: border-box; display: flex; flex-direction: column; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
+<main style="display: flex; flex-direction: column; gap: 16px; padding: 20px 16px 24px">
+
+<header style="display: flex; align-items: center; justify-content: space-between; min-height: 52px">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 26px; font-weight: 600">Budgets</h1>
+<span style="font-size: 13px; color: #5B5F64; font-weight: 500">September · 4 days left</span>
+</div>
+<button style="height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid #E3E0D8; background: #FFFFFF; font: 700 14px Manrope, sans-serif; color: #15171A">Edit</button>
+</header>
+
+<section aria-label="Overall budget" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 20px; background: #15171A; color: #FFFFFF">
+<span style="font-size: 13px; color: #C9CCD1; font-weight: 600">Spent of ₹77,000</span>
+<span style="font-family: Fraunces, Georgia, serif; font-size: 36px; font-weight: 500">₹72,300</span>
+<div role="progressbar" aria-label="Budget used" aria-valuenow="94" aria-valuemin="0" aria-valuemax="100" style="height: 10px; border-radius: 5px; background: #33363B">
+<div style="width: 94%; height: 10px; border-radius: 5px; background: #8DB8EE"></div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 12px; background: #24272B">
+<span style="font-size: 12px; color: #C9CCD1">Left to spend</span>
+<span style="font-size: 17px; font-weight: 700">₹4,700</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 12px; background: #24272B">
+<span style="font-size: 12px; color: #C9CCD1">Safe per day</span>
+<span style="font-size: 17px; font-weight: 700">₹1,175</span>
+</div>
+</div>
+</section>
+
+<section aria-labelledby="cats" style="display: flex; flex-direction: column; gap: 4px; padding: 18px 18px 10px; border-radius: 20px; background: #FFFFFF">
+<div style="display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px">
+<h2 id="cats" style="margin: 0; font-size: 15px; font-weight: 700">By category</h2>
+<span style="font-size: 12px; color: #5B5F64">spent / budget</span>
+</div>
+<sc-for list="{{budgets}}" as="b" hint-placeholder-count="9">
+<div style="{{b.rowStyle}}">
+<div style="display: flex; align-items: baseline; gap: 8px; font-size: 14px">
+<span style="font-weight: 700; flex-grow: 1">{{b.name}}</span>
+<span style="font-weight: 700">{{b.spent}}</span>
+<span style="font-size: 12px; color: #5B5F64">/ {{b.limit}}</span>
+</div>
+<div role="progressbar" aria-label="{{b.name}} budget used" aria-valuenow="{{b.pct}}" aria-valuemin="0" aria-valuemax="100" style="height: 8px; border-radius: 4px; background: #ECE9E2"><div style="{{b.barStyle}}"></div></div>
+<div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px">
+<sc-if value="{{b.over}}" hint-placeholder-val="{{ false }}">
+<span style="display: flex; align-items: center; gap: 4px; color: #8F3312; font-weight: 700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20z"></path><path d="M12 10v4M12 17h.01"></path></svg>{{b.status}}</span>
+</sc-if>
+<sc-if value="{{b.ok}}" hint-placeholder-val="{{ true }}">
+<span style="color: #3F4348; font-weight: 600">{{b.status}}</span>
+</sc-if>
+<span style="color: #5B5F64">{{b.pctLabel}}</span>
+</div>
+</div>
+</sc-for>
+</section>
+
+<button style="min-height: 52px; border-radius: 16px; border: 1.5px dashed #BDB8AD; background: transparent; font: 700 15px Manrope, sans-serif; color: #15171A">+ Add a category budget</button>
+
+</main>
+<div style="flex-grow: 1"></div>
+<nav aria-label="Main" style="display: flex; justify-content: space-around; align-items: center; padding: 8px 8px 20px; background: #FFFFFF; border-top: 1px solid #E3E0D8">
+<a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #5B5F64; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+<a href="Accounts.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #5B5F64; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"></rect><path d="M3 10h18M16 15h2"></path></svg>Accounts</a>
+<a href="AddTransaction.dc.html" aria-label="Add transaction" style="width: 52px; height: 52px; border-radius: 26px; background: #15171A; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></a>
+<a href="Spending.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #5B5F64; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 3v9h9"></path></svg>Insights</a>
+<a href="Budgets.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #1D5FB4; font-size: 11px; font-weight: 700"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1"></circle></svg>Budgets</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1300}}'>
+class Component extends DCLogic {
+renderVals() {
+var inr = function (n) { return '₹' + n.toLocaleString('en-IN'); };
+var rows = [['Rent & housing', 28000, 28000], ['Groceries', 11840, 12000], ['Food & dining', 9460, 8000], ['Transport & fuel', 5320, 6000], ['Shopping', 7890, 10000], ['Bills & utilities', 4615, 5500], ['Health', 2150, 3000], ['Entertainment', 1780, 2500], ['Others', 1245, 2000]];
+return {
+budgets: rows.map(function (r, i) {
+var spent = r[1], limit = r[2], pct = Math.round(spent / limit * 100), over = spent > limit;
+var status = over ? inr(spent - limit) + ' over' : (spent === limit ? 'Fully used' : inr(limit - spent) + ' left');
+return {
+name: r[0], spent: inr(spent), limit: inr(limit), pct: pct, pctLabel: pct + '%',
+over: over, ok: !over, status: status,
+rowStyle: 'display: flex; flex-direction: column; gap: 6px; padding: 12px 0;' + (i ? ' border-top: 1px solid #EFEDE7' : ''),
+barStyle: 'width: ' + Math.min(pct, 100) + '%; height: 8px; border-radius: 4px; background: ' + (over ? '#C2571A' : '#1D5FB4')
+};
+})
+};
+}
+}
+</script>
+</body>
+</html>

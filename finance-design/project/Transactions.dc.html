@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Transactions</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&amp;family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F2ED;font-family:Manrope,system-ui,sans-serif;color:#15171A;font-variant-numeric:tabular-nums}
+a{color:#1D5FB4}a:hover{color:#154A8C}
+</style>
+</helmet>
+<div style="width: 390px; height: 1120px; box-sizing: border-box; display: flex; flex-direction: column; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
+<main style="display: flex; flex-direction: column; gap: 14px; padding: 20px 16px 24px">
+
+<header style="display: flex; align-items: center; gap: 8px; min-height: 52px">
+<a href="Main.dc.html" aria-label="Back" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E0D8; background: #FFFFFF; color: #15171A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></a>
+<h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 26px; font-weight: 600">Transactions</h1>
+</header>
+
+<label style="display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px; border-radius: 14px; background: #FFFFFF; border: 1px solid #E3E0D8; color: #5B5F64">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+<span style="position: absolute; width: 1px; height: 1px; overflow: hidden">Search transactions</span>
+<input type="search" placeholder="Search payee, category, note" style="flex-grow: 1; border: 0; outline: none; background: transparent; font: 500 15px Manrope, sans-serif; color: #15171A">
+</label>
+
+<div role="group" aria-label="Filter" style="display: flex; gap: 8px; flex-wrap: wrap">
+<sc-for list="{{chips}}" as="c" hint-placeholder-count="4">
+<button aria-pressed="{{c.on}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button>
+</sc-for>
+<button style="min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #E3E0D8; background: #FFFFFF; font: 600 13px Manrope, sans-serif; color: #15171A">All accounts ▾</button>
+</div>
+
+<sc-for list="{{days}}" as="d" hint-placeholder-count="4">
+<section style="display: flex; flex-direction: column; padding: 6px 16px; border-radius: 18px; background: #FFFFFF">
+<div style="display: flex; justify-content: space-between; padding: 8px 0 4px; font-size: 12px; color: #5B5F64; font-weight: 700">
+<span>{{d.label}}</span><span>{{d.net}}</span>
+</div>
+<sc-for list="{{d.items}}" as="t" hint-placeholder-count="2">
+<div style="display: flex; align-items: center; gap: 12px; min-height: 60px">
+<span aria-hidden="true" style="{{t.iconStyle}}">{{t.initial}}</span>
+<div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1"><span style="font-size: 14px; font-weight: 700">{{t.name}}</span><span style="font-size: 12px; color: #5B5F64">{{t.meta}}</span></div>
+<span style="{{t.amountStyle}}">{{t.amount}}</span>
+</div>
+</sc-for>
+</section>
+</sc-for>
+
+</main>
+<div style="flex-grow: 1"></div>
+<nav aria-label="Main" style="display: flex; justify-content: space-around; align-items: center; padding: 8px 8px 20px; background: #FFFFFF; border-top: 1px solid #E3E0D8">
+<a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #5B5F64; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+<a href="Accounts.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #5B5F64; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"></rect><path d="M3 10h18M16 15h2"></path></svg>Accounts</a>
+<a href="AddTransaction.dc.html" aria-label="Add transaction" style="width: 52px; height: 52px; border-radius: 26px; background: #15171A; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></a>
+<a href="Spending.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #5B5F64; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 3v9h9"></path></svg>Insights</a>
+<a href="Budgets.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #5B5F64; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1"></circle></svg>Budgets</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1120}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { filter: 'all' };
+}
+renderVals() {
+var inr = function (n) { return '₹' + n.toLocaleString('en-IN'); };
+var f = this.state.filter;
+var all = [
+['Today · 26 Sep', [['Swiggy', 'Food & dining · ICICI Amazon Pay card', -486, 'expense'], ['Uber', 'Transport & fuel · HDFC Regalia card', -312, 'expense']]],
+['Yesterday · 25 Sep', [['Reliance Smart', 'Groceries · HDFC Savings', -2140, 'expense'], ['PVR Cinemas', 'Entertainment · HDFC Regalia card', -780, 'expense']]],
+['Wed · 24 Sep', [['Freelance payment', 'Income · ICICI Savings', 18000, 'income'], ['Airtel postpaid', 'Bills & utilities · HDFC Regalia card', -599, 'expense'], ['SBI Salary → HDFC Savings', 'Transfer between your accounts', 20000, 'transfer']]],
+['Tue · 23 Sep', [['Apollo Pharmacy', 'Health · Cash wallet', -840, 'expense']]]
+];
+var chipDefs = [['all', 'All'], ['expense', 'Expenses'], ['income', 'Income'], ['transfer', 'Transfers']];
+var days = all.map(function (d) {
+var items = d[1].filter(function (t) { return f === 'all' || t[3] === f; });
+var net = items.reduce(function (s, t) { return t[3] === 'transfer' ? s : s + t[2]; }, 0);
+return {
+label: d[0],
+net: net === 0 ? '' : (net > 0 ? '+' : '−') + inr(Math.abs(net)),
+items: items.map(function (t) {
+var kind = t[3];
+var color = kind === 'income' ? '#1C7147' : '#15171A';
+var tint = kind === 'income' ? 'background: #E1F0E7; color: #1C7147' : (kind === 'transfer' ? 'background: #E4EDF8; color: #1D5FB4' : 'background: #ECE9E2; color: #15171A');
+return {
+name: t[0], meta: t[1],
+initial: kind === 'transfer' ? '⇄' : (kind === 'income' ? 'I' : t[1].charAt(0)),
+amount: kind === 'transfer' ? inr(t[2]) : (t[2] > 0 ? '+' : '−') + inr(Math.abs(t[2])),
+amountStyle: 'font-size: 14px; font-weight: 700; color: ' + (kind === 'transfer' ? '#5B5F64' : color),
+iconStyle: 'width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; font: 600 16px Fraunces, serif; ' + tint
+};
+})
+};
+}).filter(function (d) { return d.items.length; });
+return {
+chips: chipDefs.map((c) => ({
+label: c[1], on: f === c[0],
+pick: () => this.setState({ filter: c[0] }),
+style: 'min-height: 36px; padding: 0 14px; border-radius: 18px; font: 700 13px Manrope, sans-serif; ' + (f === c[0] ? 'border: 1px solid #15171A; background: #15171A; color: #FFFFFF' : 'border: 1px solid #E3E0D8; background: #FFFFFF; color: #15171A')
+})),
+days: days
+};
+}
+}
+</script>
+</body>
+</html>
