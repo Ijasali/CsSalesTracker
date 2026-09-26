@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-CA">
 <head>
 <meta charset="utf-8">
-<title>Accounts, assets and cards</title>
+<title>Accounts, investments and debts</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -15,7 +15,7 @@ body{margin:0;background:#F4F2ED;font-family:Manrope,system-ui,sans-serif;color:
 a{color:#1D5FB4}a:hover{color:#154A8C}
 </style>
 </helmet>
-<div style="width: 390px; height: 1800px; box-sizing: border-box; display: flex; flex-direction: column; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
+<div style="width: 390px; height: 2140px; box-sizing: border-box; display: flex; flex-direction: column; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
 <main style="display: flex; flex-direction: column; gap: 16px; padding: 20px 16px 24px">
 
 <header style="display: flex; align-items: center; justify-content: space-between; min-height: 52px">
@@ -32,53 +32,54 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 <section aria-label="Summary" style="display: flex; flex-direction: column; gap: 14px; padding: 20px; border-radius: 20px; background: #15171A; color: #FFFFFF">
 <div style="display: flex; flex-direction: column; gap: 2px">
 <span style="font-size: 13px; color: #C9CCD1; font-weight: 600">{{netLabel}}</span>
-<span style="font-family: Fraunces, Georgia, serif; font-size: 36px; font-weight: 500">{{net}}</span>
+<span style="font-family: Fraunces, Georgia, serif; font-size: 34px; font-weight: 500">{{net}}</span>
 </div>
 <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
-<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">Bank &amp; cash</span><span style="font-size: 14px; font-weight: 700">{{bankTotal}}</span></div>
-<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">Assets</span><span style="font-size: 14px; font-weight: 700">{{assetTotal}}</span></div>
-<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">Cards owed</span><span style="font-size: 14px; font-weight: 700; color: #F2B08F">{{cardTotal}}</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">Bank</span><span style="font-size: 13px; font-weight: 700">{{bankTotal}}</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">{{assetLabel}}</span><span style="font-size: 13px; font-weight: 700">{{assetTotal}}</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">Owed</span><span style="font-size: 13px; font-weight: 700; color: #F2B08F">{{owedTotal}}</span></div>
 </div>
 <sc-if value="{{isEveryone}}" hint-placeholder-val="{{ true }}">
-<div style="display: flex; justify-content: space-between; padding-top: 12px; border-top: 1px solid #33363B; font-size: 13px; color: #C9CCD1">
-<span>Me <strong style="color: #FFFFFF">₹9,74,025</strong></span>
-<span>Wife <strong style="color: #FFFFFF">₹4,87,120</strong></span>
+<div style="display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 2px; padding-top: 12px; border-top: 1px solid #33363B; font-size: 12px; color: #C9CCD1">
+<span>Me <strong style="color: #FFFFFF">$143,137.61</strong></span>
+<span>Wife <strong style="color: #FFFFFF">$77,714.91</strong></span>
+<span>Joint <strong style="color: #FFFFFF">$312,619.45</strong></span>
 </div>
 </sc-if>
 </section>
 
 <section aria-labelledby="banks" style="display: flex; flex-direction: column; padding: 18px 18px 8px; border-radius: 20px; background: #FFFFFF">
 <div style="display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 6px">
-<h2 id="banks" style="margin: 0; font-size: 15px; font-weight: 700">Bank accounts &amp; cash</h2>
+<h2 id="banks" style="margin: 0; font-size: 15px; font-weight: 700">Bank accounts</h2>
 <span style="font-size: 14px; font-weight: 700">{{bankTotal}}</span>
 </div>
-<sc-for list="{{banks}}" as="b" hint-placeholder-count="6">
+<sc-for list="{{banks}}" as="b" hint-placeholder-count="5">
 <a href="Transactions.dc.html" style="{{b.rowStyle}}">
 <span aria-hidden="true" style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #E4EDF8; color: #1D5FB4; display: flex; align-items: center; justify-content: center; font: 700 13px Manrope, sans-serif">{{b.initials}}</span>
 <div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1">
 <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700">{{b.name}}<span style="{{b.badgeStyle}}">{{b.owner}}</span></span>
 <span style="font-size: 12px; color: #5B5F64">{{b.meta}}</span>
 </div>
-<span style="font-size: 15px; font-weight: 700">{{b.amount}}</span>
+<span style="font-size: 14px; font-weight: 700">{{b.amount}}</span>
 </a>
 </sc-for>
 </section>
 
 <section aria-labelledby="assets" style="display: flex; flex-direction: column; padding: 18px 18px 8px; border-radius: 20px; background: #FFFFFF">
 <div style="display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 2px">
-<h2 id="assets" style="margin: 0; font-size: 15px; font-weight: 700">Assets</h2>
+<h2 id="assets" style="margin: 0; font-size: 15px; font-weight: 700">{{assetLabel}}</h2>
 <span style="font-size: 14px; font-weight: 700">{{assetTotal}}</span>
 </div>
 <span style="font-size: 12px; color: #5B5F64; padding-bottom: 6px">Money moved here is saved, not spent</span>
-<sc-for list="{{assets}}" as="a" hint-placeholder-count="4">
+<sc-for list="{{assets}}" as="a" hint-placeholder-count="6">
 <div style="{{a.rowStyle}}">
-<span aria-hidden="true" style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #E1F0E7; color: #1C7147; display: flex; align-items: center; justify-content: center; font: 700 13px Manrope, sans-serif">{{a.initials}}</span>
+<span aria-hidden="true" style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #E1F0E7; color: #1C7147; display: flex; align-items: center; justify-content: center; font: 700 12px Manrope, sans-serif">{{a.initials}}</span>
 <div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1">
 <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700">{{a.name}}<span style="{{a.badgeStyle}}">{{a.owner}}</span></span>
 <span style="font-size: 12px; color: #5B5F64">{{a.meta}}</span>
 </div>
 <div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end">
-<span style="font-size: 15px; font-weight: 700">{{a.amount}}</span>
+<span style="font-size: 14px; font-weight: 700">{{a.amount}}</span>
 <span style="font-size: 12px; font-weight: 700; color: #1C7147">{{a.gain}}</span>
 </div>
 </div>
@@ -97,7 +98,7 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700">{{c.name}}<span style="{{c.badgeStyle}}">{{c.owner}}</span></span>
 <span style="font-size: 12px; color: #5B5F64">{{c.meta}}</span>
 </div>
-<div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end"><span style="font-size: 16px; font-weight: 700">{{c.amount}}</span><span style="font-size: 12px; color: #5B5F64">owed</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end"><span style="font-size: 15px; font-weight: 700">{{c.amount}}</span><span style="font-size: 12px; color: #5B5F64">owed</span></div>
 </div>
 <div role="progressbar" aria-label="Credit limit used" aria-valuenow="{{c.pct}}" aria-valuemin="0" aria-valuemax="100" style="height: 8px; border-radius: 4px; background: #ECE9E2"><div style="{{c.barStyle}}"></div></div>
 <div style="display: flex; justify-content: space-between; font-size: 12px; color: #5B5F64">
@@ -107,6 +108,29 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </a>
 </sc-for>
 </section>
+
+<sc-if value="{{isEveryone}}" hint-placeholder-val="{{ true }}">
+<section aria-labelledby="loans" style="display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 20px; background: #FFFFFF">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<h2 id="loans" style="margin: 0; font-size: 15px; font-weight: 700">Loans</h2>
+<span style="font-size: 14px; font-weight: 700">$412,380.55 owed</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; border: 1px solid #E3E0D8">
+<div style="display: flex; justify-content: space-between; align-items: flex-start">
+<div style="display: flex; flex-direction: column; gap: 3px">
+<span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700">Mortgage<span style="padding: 1px 7px; border-radius: 8px; font-size: 11px; font-weight: 700; background: #ECE9E2; color: #3F4348">Joint</span></span>
+<span style="font-size: 12px; color: #5B5F64">4.29% fixed · renews Jun 2028</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end"><span style="font-size: 15px; font-weight: 700">$412,380.55</span><span style="font-size: 12px; color: #5B5F64">owed</span></div>
+</div>
+<div role="progressbar" aria-label="Mortgage paid off" aria-valuenow="21" aria-valuemin="0" aria-valuemax="100" style="height: 8px; border-radius: 4px; background: #ECE9E2"><div style="width: 21%; height: 8px; border-radius: 4px; background: #1C7147"></div></div>
+<div style="display: flex; justify-content: space-between; font-size: 12px; color: #5B5F64">
+<span>21% paid off of $520,000.00</span>
+<span>$3,280.92 a month</span>
+</div>
+</div>
+</section>
+</sc-if>
 
 </main>
 <div style="flex-grow: 1"></div>
@@ -119,43 +143,48 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </nav>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1800}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2140}}'>
 class Component extends DCLogic {
 constructor(props) {
 super(props);
 this.state = { owner: 'all' };
 }
 renderVals() {
-var inr = function (n) { return '₹' + n.toLocaleString('en-IN'); };
+var cad = function (n) { return '$' + n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+var round = function (n) { return Math.round(n * 100) / 100; };
 var who = this.state.owner;
+// Joint items show only under Everyone; Me and Wife show what each owns alone.
 var mine = function (r) { return who === 'all' || r.owner === who; };
 var badge = function (o) {
 if (who !== 'all') return 'display: none';
-return 'padding: 1px 7px; border-radius: 8px; font-size: 11px; font-weight: 700; ' + (o === 'me' ? 'background: #E4EDF8; color: #154A8C' : 'background: #EEE8F7; color: #553A95');
+var tone = o === 'me' ? 'background: #E4EDF8; color: #154A8C' : (o === 'wife' ? 'background: #EEE8F7; color: #553A95' : 'background: #ECE9E2; color: #3F4348');
+return 'padding: 1px 7px; border-radius: 8px; font-size: 11px; font-weight: 700; ' + tone;
 };
-var ownerName = function (o) { return o === 'me' ? 'Me' : 'Wife'; };
+var ownerName = function (o) { return o === 'me' ? 'Me' : (o === 'wife' ? 'Wife' : 'Joint'); };
 var row = function (i) { return 'display: flex; align-items: center; gap: 12px; min-height: 64px; color: #15171A; text-decoration: none;' + (i ? ' border-top: 1px solid #EFEDE7' : ''); };
-var sum = function (xs) { return xs.reduce(function (s, x) { return s + x.value; }, 0); };
+var sum = function (xs) { return round(xs.reduce(function (s, x) { return s + x.value; }, 0)); };
 
 var banks = [
-{ owner: 'me', initials: 'HD', name: 'HDFC Savings', meta: 'Savings ••4521', value: 184250 },
-{ owner: 'me', initials: 'SB', name: 'SBI Salary', meta: 'Salary ••0937', value: 62430 },
-{ owner: 'me', initials: 'IC', name: 'ICICI Savings', meta: 'Savings ••7710', value: 38900 },
-{ owner: 'me', initials: '₹', name: 'Cash wallet', meta: 'Entered by hand', value: 4200 },
-{ owner: 'wife', initials: 'FB', name: 'Federal Bank Savings', meta: 'Savings ••2248', value: 96400 },
-{ owner: 'wife', initials: 'AX', name: 'Axis Savings', meta: 'Savings ••6605', value: 41750 }
+{ owner: 'me', initials: 'TD', name: 'TD Chequing', meta: 'Chequing ••4521', value: 4812.36 },
+{ owner: 'me', initials: 'TD', name: 'TD High Interest Savings', meta: 'Savings ••0937', value: 12450.00 },
+{ owner: 'me', initials: 'EQ', name: 'EQ Bank', meta: 'Personal account ••7710', value: 8230.15 },
+{ owner: 'wife', initials: 'RB', name: 'RBC Chequing', meta: 'Chequing ••2248', value: 3265.80 },
+{ owner: 'wife', initials: 'TG', name: 'Tangerine Savings', meta: 'Savings ••6605', value: 6940.22 }
 ].filter(mine);
 var assets = [
-{ owner: 'me', initials: 'MF', name: 'Mutual funds', meta: 'SIP ₹15,000 on the 5th', invested: 360000, value: 412600 },
-{ owner: 'me', initials: 'PF', name: 'PPF', meta: '₹10,000 added this month', invested: 285000, value: 304200 },
-{ owner: 'wife', initials: 'FD', name: 'Fixed deposit', meta: '7.1% · matures Mar 2027', invested: 200000, value: 208450 },
-{ owner: 'wife', initials: 'AU', name: 'Gold bonds', meta: '12 g · value updated 26 Sep', invested: 120000, value: 146800 }
+{ owner: 'me', initials: 'TFSA', name: 'TFSA', meta: 'Wealthsimple · $500.00 a month', invested: 41000, value: 48620.35 },
+{ owner: 'me', initials: 'RRSP', name: 'RRSP', meta: 'TD Direct Investing · $750.00 a month', invested: 61500, value: 72415.80 },
+{ owner: 'wife', initials: 'TFSA', name: 'TFSA', meta: 'Questrade', invested: 29500, value: 31208.44 },
+{ owner: 'wife', initials: 'RRSP', name: 'RRSP', meta: 'RBC group plan', invested: 24000, value: 26930.10 },
+{ owner: 'wife', initials: 'GIC', name: 'GIC', meta: '4.25% · matures Mar 2027', invested: 10000, value: 10312.50 },
+{ owner: 'joint', initials: 'HOME', name: 'Home', meta: 'Estimated value · updated Sep 2026', invested: 640000, value: 725000.00 }
 ].filter(mine);
 var cards = [
-{ owner: 'me', name: 'HDFC Regalia', meta: 'Card ••8812', value: 23640, limit: 300000, due: 'Due 5 Oct · 9 days', soon: true },
-{ owner: 'me', name: 'ICICI Amazon Pay', meta: 'Card ••3306', value: 8915, limit: 150000, due: 'Due 12 Oct · 16 days', soon: false },
-{ owner: 'wife', name: 'Axis Flipkart', meta: 'Card ••1174', value: 6280, limit: 100000, due: 'Due 8 Oct · 12 days', soon: true }
+{ owner: 'me', name: 'Amex Cobalt', meta: 'Card ••1008', value: 1284.67, limit: 12000, due: 'Due 9 Oct · 13 days', soon: false },
+{ owner: 'me', name: 'TD Aeroplan Visa', meta: 'Card ••8812', value: 2106.38, limit: 15000, due: 'Due 3 Oct · 7 days', soon: true },
+{ owner: 'wife', name: 'RBC Avion Visa', meta: 'Card ••1174', value: 942.15, limit: 8000, due: 'Due 6 Oct · 10 days', soon: true }
 ].filter(mine);
+var mortgage = who === 'all' ? 412380.55 : 0;
 
 var bankTotal = sum(banks), assetTotal = sum(assets), cardTotal = sum(cards);
 return {
@@ -164,19 +193,20 @@ label: o[1], on: who === o[0], pick: () => this.setState({ owner: o[0] }),
 style: 'min-height: 44px; border-radius: 10px; border: 0; font: 700 14px Manrope, sans-serif; color: ' + (who === o[0] ? '#15171A' : '#5B5F64') + '; background: ' + (who === o[0] ? '#FFFFFF' : 'transparent')
 })),
 isEveryone: who === 'all',
-netLabel: who === 'all' ? 'Household net worth' : (who === 'me' ? 'My net worth' : 'Wife’s net worth'),
-net: inr(bankTotal + assetTotal - cardTotal),
-bankTotal: inr(bankTotal), assetTotal: inr(assetTotal), cardTotal: inr(cardTotal),
-banks: banks.map(function (b, i) { return { initials: b.initials, name: b.name, meta: b.meta, amount: inr(b.value), owner: ownerName(b.owner), badgeStyle: badge(b.owner), rowStyle: row(i) }; }),
+netLabel: who === 'all' ? 'Household net worth' : (who === 'me' ? 'My net worth (not counting joint)' : 'Wife’s net worth (not counting joint)'),
+net: cad(round(bankTotal + assetTotal - cardTotal - mortgage)),
+assetLabel: who === 'all' ? 'Investments & home' : 'Investments',
+bankTotal: cad(bankTotal), assetTotal: cad(assetTotal), cardTotal: cad(cardTotal), owedTotal: cad(round(cardTotal + mortgage)),
+banks: banks.map(function (b, i) { return { initials: b.initials, name: b.name, meta: b.meta, amount: cad(b.value), owner: ownerName(b.owner), badgeStyle: badge(b.owner), rowStyle: row(i) }; }),
 assets: assets.map(function (a, i) {
-var gain = a.value - a.invested;
-return { initials: a.initials, name: a.name, meta: a.meta, amount: inr(a.value), gain: '+' + inr(gain) + ' (' + (gain / a.invested * 100).toFixed(1) + '%)', owner: ownerName(a.owner), badgeStyle: badge(a.owner), rowStyle: row(i) };
+var gain = round(a.value - a.invested);
+return { initials: a.initials, name: a.name, meta: a.meta, amount: cad(a.value), gain: '+' + cad(gain) + ' (' + (gain / a.invested * 100).toFixed(1) + '%)', owner: ownerName(a.owner), badgeStyle: badge(a.owner), rowStyle: row(i) };
 }),
 cards: cards.map(function (c) {
 var pct = Math.round(c.value / c.limit * 100);
 return {
-name: c.name, meta: c.meta, amount: inr(c.value), owner: ownerName(c.owner), badgeStyle: badge(c.owner),
-pct: pct, limit: pct + '% of ' + inr(c.limit) + ' limit', due: c.due,
+name: c.name, meta: c.meta, amount: cad(c.value), owner: ownerName(c.owner), badgeStyle: badge(c.owner),
+pct: pct, limit: pct + '% of ' + cad(c.limit) + ' limit', due: c.due,
 dueStyle: c.soon ? 'color: #8F3312; font-weight: 700' : '',
 barStyle: 'width: ' + Math.max(pct, 2) + '%; height: 8px; border-radius: 4px; background: #C2571A'
 };

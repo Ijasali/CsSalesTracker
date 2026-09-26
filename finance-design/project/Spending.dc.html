@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-CA">
 <head>
 <meta charset="utf-8">
 <title>Spending by category</title>
@@ -15,7 +15,13 @@ body{margin:0;background:#F4F2ED;font-family:Manrope,system-ui,sans-serif;color:
 a{color:#1D5FB4}a:hover{color:#154A8C}
 </style>
 </helmet>
-<div style="width: 390px; height: 1300px; box-sizing: border-box; display: flex; flex-direction: column; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
+<div style="width: 390px; height: 1360px; box-sizing: border-box; display: flex; flex-direction: column; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
+
+<sc-if value="{{showDetail}}" hint-placeholder-val="{{ false }}">
+<dc-import name="CategoryDetail" category="{{selected}}" on-back="{{back}}" hint-size="390px,1220px"></dc-import>
+</sc-if>
+
+<sc-if value="{{showList}}" hint-placeholder-val="{{ true }}">
 <main style="display: flex; flex-direction: column; gap: 16px; padding: 20px 16px 24px">
 
 <header style="display: flex; align-items: center; justify-content: space-between; min-height: 52px">
@@ -38,20 +44,21 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 <span style="font-size: 13px; color: #5B5F64">{{compare}}</span>
 </section>
 
-<section aria-labelledby="bycat" style="display: flex; flex-direction: column; gap: 16px; padding: 18px; border-radius: 20px; background: #FFFFFF">
-<div style="display: flex; justify-content: space-between; align-items: baseline">
+<section aria-labelledby="bycat" style="display: flex; flex-direction: column; gap: 4px; padding: 18px 18px 10px; border-radius: 20px; background: #FFFFFF">
+<div style="display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 6px">
 <h2 id="bycat" style="margin: 0; font-size: 15px; font-weight: 700">By category</h2>
-<span style="font-size: 12px; color: #5B5F64">share of total</span>
+<span style="font-size: 12px; color: #5B5F64">{{catHint}}</span>
 </div>
 <sc-for list="{{categories}}" as="c" hint-placeholder-count="9">
-<div title="{{c.tip}}" style="display: flex; flex-direction: column; gap: 6px">
-<div style="display: flex; align-items: baseline; gap: 8px; font-size: 14px">
+<button onClick="{{c.open}}" disabled="{{c.static}}" aria-label="{{c.tip}}" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border: 0; background: transparent; text-align: left; font: inherit; color: #15171A; cursor: pointer">
+<div style="display: flex; align-items: baseline; gap: 8px; font-size: 14px; width: 100%">
 <span style="font-weight: 600; flex-grow: 1">{{c.name}}</span>
 <span style="font-size: 12px; color: #5B5F64">{{c.share}}</span>
-<span style="font-weight: 700; min-width: 76px; text-align: right">{{c.amount}}</span>
+<span style="font-weight: 700; min-width: 84px; text-align: right">{{c.amount}}</span>
+<span aria-hidden="true" style="{{c.chevronStyle}}">›</span>
 </div>
-<div style="height: 8px; border-radius: 4px; background: #ECE9E2"><div style="{{c.barStyle}}"></div></div>
-</div>
+<div style="width: 100%; height: 8px; border-radius: 4px; background: #ECE9E2"><div style="{{c.barStyle}}"></div></div>
+</button>
 </sc-for>
 </section>
 
@@ -61,7 +68,7 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 <h2 id="byacc" style="margin: 0; font-size: 15px; font-weight: 700">Paid from</h2>
 <span style="font-size: 12px; color: #5B5F64">accounts &amp; cards</span>
 </div>
-<sc-for list="{{accounts}}" as="a" hint-placeholder-count="5">
+<sc-for list="{{accounts}}" as="a" hint-placeholder-count="4">
 <div style="display: flex; flex-direction: column; gap: 6px">
 <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="font-weight: 600">{{a.name}}</span><span style="font-weight: 700">{{a.amount}}</span></div>
 <div style="height: 8px; border-radius: 4px; background: #ECE9E2"><div style="{{a.barStyle}}"></div></div>
@@ -71,6 +78,8 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </sc-if>
 
 </main>
+</sc-if>
+
 <div style="flex-grow: 1"></div>
 <nav aria-label="Main" style="display: flex; justify-content: space-around; align-items: center; padding: 8px 8px 20px; background: #FFFFFF; border-top: 1px solid #E3E0D8">
 <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 60px; padding: 6px 0; text-decoration: none; color: #5B5F64; font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
@@ -81,38 +90,52 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </nav>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1300}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1360}}'>
 class Component extends DCLogic {
 constructor(props) {
 super(props);
-this.state = { view: 'expense' };
+this.state = { view: 'expense', selected: null };
 }
 renderVals() {
-var inr = function (n) { return '₹' + n.toLocaleString('en-IN'); };
+var cad = function (n) { return (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 var expense = this.state.view === 'expense';
+// [key, name, September, August]
 var rows = expense
-? [['Rent & housing', 28000], ['Groceries', 11840], ['Food & dining', 9460], ['Shopping', 7890], ['Transport & fuel', 5320], ['Bills & utilities', 4615], ['Health', 2150], ['Entertainment', 1780], ['Others', 1245]]
-: [['Salary', 125000], ['Freelance', 18000]];
-var total = rows.reduce(function (s, r) { return s + r[1]; }, 0);
-var max = rows[0][1];
+? [['home', 'Home expenses', 4283.49, 4415.21], ['groceries', 'Groceries', 1126.40, 1176.90], ['transport', 'Transportation', 698.30, 684.20], ['dining', 'Dining out', 412.85, 385.60], ['shopping', 'Shopping', 356.20, 377.80], ['phone', 'Phone & subscriptions', 187.44, 187.44], ['fun', 'Entertainment', 128.75, 110.35], ['health', 'Health & personal care', 94.60, 132.10], ['other', 'Other', 62.00, 54.30]]
+: [['', 'Salary · Me', 6850.00, 6850.00], ['', 'Salary · Wife', 4120.00, 4120.00]];
+var total = rows.reduce(function (s, r) { return s + r[2]; }, 0);
+var lastTotal = rows.reduce(function (s, r) { return s + r[3]; }, 0);
+var diff = total - lastTotal;
+var max = rows[0][2];
 var bar = function (v, m) { return 'width: ' + (v / m * 100).toFixed(1) + '%; height: 8px; border-radius: 4px; background: ' + (expense ? '#1D5FB4' : '#1C7147'); };
 var tab = function (on) { return 'min-height: 44px; border-radius: 10px; border: 0; font: 700 14px Manrope, sans-serif; color: ' + (on ? '#15171A' : '#5B5F64') + '; background: ' + (on ? '#FFFFFF' : 'transparent'); };
-var accounts = [['HDFC Savings', 31480], ['HDFC Regalia card', 23640], ['ICICI Amazon Pay card', 8915], ['Cash wallet', 4200], ['SBI Salary', 4065]];
+var accounts = [['TD Chequing · Me', 4113.81], ['Amex Cobalt · Me', 1284.67], ['TD Aeroplan Visa · Me', 1009.40], ['RBC Avion Visa · Wife', 942.15]];
 return {
+showDetail: !!this.state.selected,
+showList: !this.state.selected,
+selected: this.state.selected || 'home',
+back: () => this.setState({ selected: null }),
 isExpense: expense,
 isIncome: !expense,
 showExpense: () => this.setState({ view: 'expense' }),
 showIncome: () => this.setState({ view: 'income' }),
 expenseTabStyle: tab(expense),
 incomeTabStyle: tab(!expense),
-totalLabel: expense ? 'Spent in September' : 'Earned in September',
-total: inr(total),
-compare: expense ? '▼ 5% less than August (₹76,260)' : 'Same as August',
-categories: rows.map(function (r) {
-var share = (r[1] / total * 100).toFixed(1) + '%';
-return { name: r[0], amount: inr(r[1]), share: share, tip: r[0] + ': ' + inr(r[1]) + ' (' + share + ')', barStyle: bar(r[1], max) };
+totalLabel: expense ? 'Household spending in September' : 'Household income in September',
+total: cad(total),
+compare: diff === 0 ? 'Same as August' : (diff < 0 ? '▼ ' : '▲ ') + cad(Math.abs(diff)) + ' ' + (diff < 0 ? 'less' : 'more') + ' than August (' + cad(lastTotal) + ')',
+catHint: expense ? 'tap for monthly history' : 'share of total',
+categories: rows.map((r) => {
+var share = (r[2] / total * 100).toFixed(1) + '%';
+return {
+name: r[1], amount: cad(r[2]), share: share, static: !r[0],
+tip: r[1] + ': ' + cad(r[2]) + ', ' + share + (r[0] ? '. Open monthly history' : ''),
+open: () => r[0] && this.setState({ selected: r[0] }),
+chevronStyle: r[0] ? 'font-size: 18px; font-weight: 700; color: #5B5F64; width: 10px' : 'display: none',
+barStyle: bar(r[2], max)
+};
 }),
-accounts: accounts.map(function (a) { return { name: a[0], amount: inr(a[1]), barStyle: bar(a[1], accounts[0][1]) }; })
+accounts: accounts.map(function (a) { return { name: a[0], amount: cad(a[1]), barStyle: bar(a[1], accounts[0][1]) }; })
 };
 }
 }

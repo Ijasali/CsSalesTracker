@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-CA">
 <head>
 <meta charset="utf-8">
 <title>Budgets</title>
@@ -27,19 +27,19 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </header>
 
 <section aria-label="Overall budget" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 20px; background: #15171A; color: #FFFFFF">
-<span style="font-size: 13px; color: #C9CCD1; font-weight: 600">Spent of ₹77,000</span>
-<span style="font-family: Fraunces, Georgia, serif; font-size: 36px; font-weight: 500">₹72,300</span>
-<div role="progressbar" aria-label="Budget used" aria-valuenow="94" aria-valuemin="0" aria-valuemax="100" style="height: 10px; border-radius: 5px; background: #33363B">
-<div style="width: 94%; height: 10px; border-radius: 5px; background: #8DB8EE"></div>
+<span style="font-size: 13px; color: #C9CCD1; font-weight: 600">Household spending of $7,700.00</span>
+<span style="font-family: Fraunces, Georgia, serif; font-size: 36px; font-weight: 500">$7,350.03</span>
+<div role="progressbar" aria-label="Budget used" aria-valuenow="95" aria-valuemin="0" aria-valuemax="100" style="height: 10px; border-radius: 5px; background: #33363B">
+<div style="width: 95%; height: 10px; border-radius: 5px; background: #8DB8EE"></div>
 </div>
 <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
 <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 12px; background: #24272B">
 <span style="font-size: 12px; color: #C9CCD1">Left to spend</span>
-<span style="font-size: 17px; font-weight: 700">₹4,700</span>
+<span style="font-size: 17px; font-weight: 700">$349.97</span>
 </div>
 <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 12px; background: #24272B">
 <span style="font-size: 12px; color: #C9CCD1">Safe per day</span>
-<span style="font-size: 17px; font-weight: 700">₹1,175</span>
+<span style="font-size: 17px; font-weight: 700">$87.49</span>
 </div>
 </div>
 </section>
@@ -47,10 +47,10 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 <section aria-labelledby="cats" style="display: flex; flex-direction: column; gap: 4px; padding: 18px 18px 10px; border-radius: 20px; background: #FFFFFF">
 <div style="display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px">
 <h2 id="cats" style="margin: 0; font-size: 15px; font-weight: 700">By category</h2>
-<span style="font-size: 12px; color: #5B5F64">spent / budget</span>
+<span style="font-size: 12px; color: #5B5F64">tap for monthly history</span>
 </div>
 <sc-for list="{{budgets}}" as="b" hint-placeholder-count="9">
-<div style="{{b.rowStyle}}">
+<a href="CategoryDetail.dc.html" style="{{b.rowStyle}}">
 <div style="display: flex; align-items: baseline; gap: 8px; font-size: 14px">
 <span style="font-weight: 700; flex-grow: 1">{{b.name}}</span>
 <span style="font-weight: 700">{{b.spent}}</span>
@@ -66,7 +66,7 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </sc-if>
 <span style="color: #5B5F64">{{b.pctLabel}}</span>
 </div>
-</div>
+</a>
 </sc-for>
 </section>
 
@@ -86,16 +86,16 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1300}}'>
 class Component extends DCLogic {
 renderVals() {
-var inr = function (n) { return '₹' + n.toLocaleString('en-IN'); };
-var rows = [['Rent & housing', 28000, 28000], ['Groceries', 11840, 12000], ['Food & dining', 9460, 8000], ['Transport & fuel', 5320, 6000], ['Shopping', 7890, 10000], ['Bills & utilities', 4615, 5500], ['Health', 2150, 3000], ['Entertainment', 1780, 2500], ['Others', 1245, 2000]];
+var inr = function (n) { return '$' + n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+var rows = [['Home expenses', 4283.49, 4400], ['Groceries', 1126.40, 1200], ['Dining out', 412.85, 350], ['Transportation', 698.30, 750], ['Shopping', 356.20, 400], ['Phone & subscriptions', 187.44, 200], ['Health & personal care', 94.60, 150], ['Entertainment', 128.75, 150], ['Other', 62.00, 100]];
 return {
 budgets: rows.map(function (r, i) {
 var spent = r[1], limit = r[2], pct = Math.round(spent / limit * 100), over = spent > limit;
-var status = over ? inr(spent - limit) + ' over' : (spent === limit ? 'Fully used' : inr(limit - spent) + ' left');
+var status = over ? inr(Math.round((spent - limit) * 100) / 100) + ' over' : (spent === limit ? 'Fully used' : inr(Math.round((limit - spent) * 100) / 100) + ' left');
 return {
 name: r[0], spent: inr(spent), limit: inr(limit), pct: pct, pctLabel: pct + '%',
 over: over, ok: !over, status: status,
-rowStyle: 'display: flex; flex-direction: column; gap: 6px; padding: 12px 0;' + (i ? ' border-top: 1px solid #EFEDE7' : ''),
+rowStyle: 'display: flex; flex-direction: column; gap: 6px; padding: 12px 0; color: #15171A; text-decoration: none;' + (i ? ' border-top: 1px solid #EFEDE7' : ''),
 barStyle: 'width: ' + Math.min(pct, 100) + '%; height: 8px; border-radius: 4px; background: ' + (over ? '#C2571A' : '#1D5FB4')
 };
 })

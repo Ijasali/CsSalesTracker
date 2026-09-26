@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-CA">
 <head>
 <meta charset="utf-8">
 <title>Transactions</title>
@@ -69,18 +69,18 @@ super(props);
 this.state = { filter: 'all' };
 }
 renderVals() {
-var inr = function (n) { return '₹' + n.toLocaleString('en-IN'); };
+var inr = function (n) { return '$' + n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 var f = this.state.filter;
 var all = [
-['Today · 26 Sep', [['Swiggy', 'Food & dining · ICICI Amazon Pay card', -486, 'expense'], ['Uber', 'Transport & fuel · HDFC Regalia card', -312, 'expense']]],
-['Yesterday · 25 Sep', [['Reliance Smart', 'Groceries · HDFC Savings', -2140, 'expense'], ['PVR Cinemas', 'Entertainment · HDFC Regalia card', -780, 'expense'], ['HDFC Savings → PPF', 'Moved to an asset · not spending', 10000, 'invest']]],
-['Wed · 24 Sep', [['Freelance payment', 'Income · ICICI Savings', 18000, 'income'], ['Airtel postpaid', 'Bills & utilities · HDFC Regalia card', -599, 'expense'], ['SBI Salary → HDFC Savings', 'Transfer between your accounts', 20000, 'transfer']]],
-['Tue · 23 Sep', [['Apollo Pharmacy', 'Health · Cash wallet', -840, 'expense']]]
+['Today · Sat 26 Sep', [['Tim Hortons', 'Dining out · Amex Cobalt', -8.45, 'expense'], ['Shell', 'Transportation · TD Aeroplan Visa', -62.30, 'expense']]],
+['Yesterday · Fri 25 Sep', [['Costco', 'Groceries · Amex Cobalt', -214.63, 'expense'], ['Payroll', 'Salary · TD Chequing', 3425.00, 'income'], ['TD Chequing → TFSA', 'Moved to an investment · not spending', 500.00, 'invest']]],
+['Thu 24 Sep', [['Enbridge Gas', 'Home expenses · TD Chequing', -48.69, 'expense'], ['Payroll', 'Salary · RBC Chequing (Wife)', 2060.00, 'income'], ['RBC Chequing → RBC Avion Visa', 'Card payment · not spending', 600.00, 'transfer']]],
+['Wed 23 Sep', [['Shoppers Drug Mart', 'Health & personal care · RBC Avion Visa (Wife)', -42.15, 'expense']]]
 ];
 var chipDefs = [['all', 'All'], ['expense', 'Expenses'], ['income', 'Income'], ['transfer', 'Transfers']];
 var days = all.map(function (d) {
 var items = d[1].filter(function (t) { return f === 'all' || t[3] === f || (f === 'transfer' && t[3] === 'invest'); });
-var net = items.reduce(function (s, t) { return t[3] === 'transfer' || t[3] === 'invest' ? s : s + t[2]; }, 0);
+var net = items.reduce(function (s, t) { return t[3] === 'transfer' || t[3] === 'invest' ? s : Math.round((s + t[2]) * 100) / 100; }, 0);
 return {
 label: d[0],
 net: net === 0 ? '' : (net > 0 ? '+' : '−') + inr(Math.abs(net)),

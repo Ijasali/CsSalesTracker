@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-CA">
 <head>
 <meta charset="utf-8">
 <title>Add transaction</title>
@@ -15,7 +15,7 @@ body{margin:0;background:#F4F2ED;font-family:Manrope,system-ui,sans-serif;color:
 a{color:#1D5FB4}a:hover{color:#154A8C}
 </style>
 </helmet>
-<div style="width: 390px; height: 1000px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; padding: 20px 16px 24px; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
+<div style="width: 390px; height: 1120px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; padding: 20px 16px 24px; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
 
 <header style="display: flex; align-items: center; justify-content: space-between; min-height: 52px">
 <a href="Main.dc.html" style="min-height: 44px; display: flex; align-items: center; font-size: 15px; font-weight: 700; text-decoration: none">Cancel</a>
@@ -31,7 +31,7 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 
 <label style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 0 8px">
 <span style="font-size: 13px; color: #5B5F64; font-weight: 600">Amount</span>
-<span style="display: flex; align-items: baseline; gap: 4px; font-family: Fraunces, Georgia, serif; font-size: 48px; font-weight: 500">₹<input inputmode="decimal" value="486" aria-label="Amount in rupees" style="width: 160px; border: 0; outline: none; background: transparent; font: 500 48px Fraunces, Georgia, serif; color: #15171A; text-align: left"></span>
+<span style="display: flex; align-items: baseline; gap: 4px; font-family: Fraunces, Georgia, serif; font-size: 48px; font-weight: 500">$<input inputmode="decimal" value="8.45" aria-label="Amount in dollars" style="width: 160px; border: 0; outline: none; background: transparent; font: 500 48px Fraunces, Georgia, serif; color: #15171A; text-align: left"></span>
 </label>
 
 <sc-if value="{{showCategories}}" hint-placeholder-val="{{ true }}">
@@ -43,6 +43,16 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </sc-for>
 </div>
 </fieldset>
+<sc-if value="{{hasSubs}}" hint-placeholder-val="{{ true }}">
+<fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 10px">
+<legend style="padding: 0 0 10px; font-size: 13px; color: #5B5F64; font-weight: 700">Subcategory</legend>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<sc-for list="{{subs}}" as="c" hint-placeholder-count="3">
+<button aria-pressed="{{c.on}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button>
+</sc-for>
+</div>
+</fieldset>
+</sc-if>
 </sc-if>
 
 <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 10px">
@@ -73,7 +83,7 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </label>
 <label style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-top: 1px solid #EFEDE7; font-size: 14px">
 <span style="font-weight: 700">Note</span>
-<input type="text" placeholder="Swiggy, dinner" style="flex-grow: 1; border: 0; outline: none; background: transparent; font: 500 14px Manrope, sans-serif; color: #15171A; text-align: right">
+<input type="text" placeholder="Tim Hortons, coffee" style="flex-grow: 1; border: 0; outline: none; background: transparent; font: 500 14px Manrope, sans-serif; color: #15171A; text-align: right">
 </label>
 </div>
 
@@ -81,27 +91,31 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; min-height: 56px; border-radius: 16px; background: #15171A; color: #FFFFFF; font-size: 16px; font-weight: 700; text-decoration: none">Save</a>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1000}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1120}}'>
 class Component extends DCLogic {
 constructor(props) {
 super(props);
-this.state = { type: 'expense', category: 'Dining', account: 'ICICI card', to: 'HDFC Savings' };
+this.state = { type: 'expense', category: 'Dining out', sub: 'Coffee', account: 'Amex Cobalt', to: 'TFSA' };
 }
 renderVals() {
 var s = this.state;
 var pill = function (on) { return 'min-height: 44px; padding: 0 14px; border-radius: 12px; font: 700 13px Manrope, sans-serif; ' + (on ? 'border: 1.5px solid #1D5FB4; background: #E4EDF8; color: #154A8C' : 'border: 1px solid #E3E0D8; background: #FFFFFF; color: #15171A'); };
 var tab = function (on) { return 'min-height: 44px; border-radius: 10px; border: 0; font: 700 14px Manrope, sans-serif; color: ' + (on ? '#15171A' : '#5B5F64') + '; background: ' + (on ? '#FFFFFF' : 'transparent'); };
-var cats = s.type === 'income' ? ['Salary', 'Freelance', 'Interest', 'Refund', 'Gift', 'Other'] : ['Rent', 'Groceries', 'Dining', 'Transport', 'Shopping', 'Bills', 'Health', 'Fun', 'Others'];
-var accts = ['HDFC Savings', 'SBI Salary', 'ICICI Savings', 'Cash', 'HDFC card', 'ICICI card', 'Federal · Wife', 'Axis · Wife', 'Axis card · Wife'];
-var assets = ['Mutual funds', 'PPF', 'Fixed deposit · Wife', 'Gold bonds · Wife'];
+var SUBS = { 'Home': ['Mortgage', 'Property tax', 'Hydro One', 'Home insurance', 'Enbridge gas', 'Internet', 'Water', 'Water heater'], 'Groceries': ['Costco', 'No Frills', 'Farm Boy'], 'Dining out': ['Restaurants', 'Takeout', 'Coffee'], 'Transport': ['Fuel', 'Car insurance', 'Presto', 'Parking'], 'Phone & subs': ['Mobile', 'Streaming'], 'Shopping': ['Clothing', 'Household', 'Amazon'], 'Health': ['Pharmacy', 'Personal care'], 'Fun': ['Movies & events', 'Hobbies'], 'Other': ['Gifts', 'Misc'] };
+var cats = s.type === 'income' ? ['Salary', 'Side income', 'Interest', 'Refund', 'Benefits', 'Other'] : Object.keys(SUBS);
+var subList = s.type === 'expense' ? (SUBS[s.category] || []) : [];
+var accts = ['TD Chequing', 'TD Savings', 'EQ Bank', 'Amex Cobalt', 'TD Aeroplan Visa', 'RBC Chequing · Wife', 'Tangerine · Wife', 'RBC Avion · Wife'];
+var assets = ['TFSA', 'RRSP', 'TFSA · Wife', 'RRSP · Wife', 'GIC · Wife'];
 var targets = accts.filter(function (a) { return a !== s.account; }).concat(assets);
 return {
 types: [['expense', 'Expense'], ['income', 'Income'], ['transfer', 'Transfer']].map((t) => ({
 label: t[1], on: s.type === t[0], style: tab(s.type === t[0]),
-pick: () => this.setState({ type: t[0], category: t[0] === 'income' ? 'Salary' : 'Dining', account: t[0] === 'transfer' ? 'HDFC Savings' : 'ICICI card', to: 'Mutual funds' })
+pick: () => this.setState({ type: t[0], category: t[0] === 'income' ? 'Salary' : 'Dining out', sub: 'Coffee', account: t[0] === 'expense' ? 'Amex Cobalt' : 'TD Chequing', to: 'TFSA' })
 })),
 showCategories: s.type !== 'transfer',
-categories: cats.map((c) => ({ label: c, on: s.category === c, style: pill(s.category === c), pick: () => this.setState({ category: c }) })),
+categories: cats.map((c) => ({ label: c, on: s.category === c, style: pill(s.category === c), pick: () => this.setState({ category: c, sub: (SUBS[c] || [])[0] }) })),
+hasSubs: subList.length > 0,
+subs: subList.map((c) => ({ label: c, on: s.sub === c, style: pill(s.sub === c), pick: () => this.setState({ sub: c }) })),
 isTransfer: s.type === 'transfer',
 targets: targets.map((a) => ({ label: a, on: s.to === a, style: pill(s.to === a), pick: () => this.setState({ to: a }) })),
 transferNote: assets.indexOf(s.to) >= 0 ? 'Counts as saving, not spending' : 'Moves money between accounts; not spending',
