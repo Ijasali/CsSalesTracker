@@ -79,6 +79,12 @@ h2{margin:0;font-size:15px;font-weight:700}
 .hero-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:12px;color:var(--hero-muted)}
 .hero-note button{min-height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--hero-muted);background:transparent;color:var(--hero-ink);font-weight:700;font-size:12px;cursor:pointer}
 .item.off .t1,.item.off .amt{color:var(--muted)}
+.acctrow{cursor:default;gap:4px}
+.acctrow .t1{white-space:normal;overflow-wrap:anywhere}
+.acctrow .amt{text-align:right}
+.acctrow .rowbtn{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:8px 0 !important;border:0;background:none;padding:0;min-height:48px;text-align:left;color:inherit;cursor:pointer}
+.eye{width:44px;height:44px;flex-shrink:0;border:0;background:none;border-radius:22px;display:flex;align-items:center;justify-content:center;color:var(--ink2);cursor:pointer}
+.acctrow.off .eye{color:var(--muted)}
 .pos{color:var(--good)} .neg{color:var(--warn)} .owed{color:var(--hero-owed)}
 .bar{height:8px;border-radius:4px;background:var(--track);overflow:hidden} .bar>i{display:block;height:100%;border-radius:4px;background:var(--accent)}
 .bar.lg{height:10px;border-radius:5px} .bar>i.over{background:var(--warn-bar)} .bar>i.inc{background:var(--good)}
@@ -188,7 +194,7 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const MONTHS_L = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const S = {
-  countAll: false, nwEdit: false, net: null,
+  countAll: false, net: null,
   view: 'home', stack: [], mcp: null, sample: null, imgOK: false, web: false, sb: null, user: null, login: null, unlinked: false, pending: null,
   boot: null, month: null, monthData: {}, recent: null, txns: null, cat: null,
   owner: 'all', showHidden: false, insKind: 'expense', txq: '', txKind: 'all', txAcct: '', txMonth: null,
@@ -246,7 +252,9 @@ const ICON = {
   alert:'<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',
   search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   camera:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
-  pen:'<path d="M4 20h4L19 9l-4-4L4 16z"/>', user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>', refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>'
+  pen:'<path d="M4 20h4L19 9l-4-4L4 16z"/>', user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff:'<path d="M10.6 5.1A10.5 10.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.6 3.6M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.8 9.8 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>', refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>'
 };
 const svg = (n, s) => `<svg width="${s||20}" height="${s||20}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
 
@@ -397,7 +405,6 @@ function render(){
   else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport})[S.view](); }
   root.innerHTML = body + (app ? tabs() : '') + (S.sheet ? sheet() : '') + (S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : '');
   if(focus){ const el = document.getElementById(focus.id); if(el){ el.focus(); try { if(focus.s != null) el.setSelectionRange(focus.s, focus.s); } catch(e){} } }
-  document.querySelectorAll('[data-mixed]').forEach(el => { el.indeterminate = true; });
   const ch = $('.chart');
   if(ch) ch.style.scrollBehavior = 'auto';
   if(ch && S.view === 'insights' && S.insKind === 'net'){
@@ -526,7 +533,7 @@ function nwNote(tot){
   const hiddenN = B().accounts.filter(a => a.active && !a.nw).length;
   if(S.countAll) return hiddenN ? `<div class="hero-note"><span>Counting every account</span><button data-act="countall">Leave out ${hiddenN} hidden</button></div>` : '';
   if(!tot.leftN) return '';
-  return `<div class="hero-note"><span>Leaves out ${tot.leftN} account${tot.leftN > 1 ? 's' : ''} (${cad0(tot.leftOut)})</span><button data-act="countall">Count everything</button></div>`;
+  return `<div class="hero-note"><span>${tot.leftN} hidden account${tot.leftN > 1 ? 's' : ''} not counted (${cad0(tot.leftOut)})</span><button data-act="countall">Count everything</button></div>`;
 }
 function totals(filterOwner){
   const r = {assets: 0, owed: 0, bank: 0, inv: 0, byOwner: {}, leftOut: 0, leftN: 0};
@@ -612,18 +619,13 @@ function viewAccounts(){
     <section class="hero" aria-label="Summary"><span class="lbl">${own === 'all' ? 'Household net worth' : (own === 'joint' ? 'Joint net worth' : esc(ms[+own.slice(1)].name) + '’s net worth')}</span><span class="big">${cad(tot.net)}</span>${nwNote(tot)}
     <div class="tiles"><div class="tile" style="cursor:default"><span class="k">Bank & cash</span><span class="v">${cad0(tot.bank)}</span></div><div class="tile" style="cursor:default"><span class="k">Investments</span><span class="v">${cad0(tot.inv)}</span></div><div class="tile" style="cursor:default"><span class="k">Owed</span><span class="v owed">${cad0(tot.owed)}</span></div></div></section>`;
   const accs = B().accounts.filter(a => own === 'all' || ownerKey(a) === own);
-  h += S.nwEdit
-    ? `<div class="banner"><span class="grow">Tick the accounts that count towards net worth. Changes save straight away and apply for both of you.</span><button class="btn accent" data-act="nwedit" style="min-height:36px">Done</button></div>`
-    : `<button class="link" data-act="nwedit" style="align-self:flex-start">Choose what counts in net worth</button>`;
+  h += `<span class="xs muted">Tap the eye to hide an account from the totals, and again to count it. This applies for both of you.</span>`;
   if(S.err.nw) h += banner(S.err.nw, true);
   for(const g of GROUPS){
     const list = accs.filter(a => a.active && g.types.includes(a.type));
     if(!list.length) continue;
     const sum = list.reduce((s, a) => s + Number(a.bal), 0);
-    const on = list.filter(a => a.nw).length;
-    const head = S.nwEdit
-      ? `<label class="row sp" style="padding-top:10px;cursor:pointer"><span class="row" style="gap:10px"><input type="checkbox" class="check" data-nwgroup="${g.key}"${on === list.length ? ' checked' : ''}${on && on < list.length ? ' data-mixed="1"' : ''} aria-label="Count all ${esc(g.title)}"><h2>${g.title}</h2></span><span class="b" style="white-space:nowrap">${cad(sum)}</span></label>`
-      : `<div class="row sp" style="padding-top:10px"><h2>${g.title}</h2><span class="b" style="white-space:nowrap">${cad(sum)}</span></div>`;
+    const head = `<div class="row sp" style="padding-top:10px"><h2>${g.title}</h2><span class="b" style="white-space:nowrap">${cad(sum)}</span></div>`;
     h += `<section class="card tight">${head}<div class="list">${list.sort((a, b) => Math.abs(b.bal) - Math.abs(a.bal)).map(acctRow).join('')}</div></section>`;
   }
   const hidden = accs.filter(a => !a.active);
@@ -638,10 +640,12 @@ function acctRow(a){
   const cls = liab ? 'debt' : (inv ? 'inv' : 'acct');
   const typeLabel = {chequing:'Chequing', savings:'Savings', cash:'Cash', prepaid:'Prepaid card', credit_card:'Credit card', line_of_credit:'Line of credit', tfsa:'TFSA', rrsp:'RRSP', fhsa:'FHSA', resp:'RESP', gic:'GIC', non_registered:'Investment', crypto:'Crypto', business:'Business', property:'Property', mortgage:'Mortgage', loan:'Loan', receivable:'Money lent'}[a.type] || a.type;
   const bal = Number(a.bal);
-  const meta = [typeLabel, a.institution, a.active && !a.nw ? 'not in net worth' : '', a.incl ? '' : 'spending not counted', a.last_txn ? 'last ' + a.last_txn : ''].filter(Boolean).join(' · ');
+  const meta = [typeLabel, a.institution, a.active && !a.nw ? 'hidden from totals' : '', a.incl ? '' : 'spending not counted', a.last_txn ? 'last ' + a.last_txn : ''].filter(Boolean).join(' · ');
   const valCls = liab ? (bal < 0 ? ' neg' : '') : '';
-  if(S.nwEdit && a.active) return `<label class="item"><input type="checkbox" class="check" data-nw="${a.id}"${a.nw ? ' checked' : ''} aria-label="Count ${esc(a.name)} in net worth"><span class="grow"><span class="t1" style="display:block">${esc(a.name)}</span><span class="t2" style="display:block">${esc(typeLabel)}${S.owner === 'all' && member(a.owner) ? ' · ' + esc(member(a.owner).name) : (S.owner === 'all' && !a.owner ? ' · Joint' : '')}</span></span><span class="amt">${liab ? cad(Math.abs(bal)) + (bal < 0 ? ' owed' : '') : cad(bal)}</span></label>`;
-  return `<button class="item${a.active && !a.nw && !S.countAll ? ' off' : ''}" data-act="acct" data-id="${a.id}"><span class="ic ${cls}" aria-hidden="true">${esc(initials(a.institution || a.name))}</span><span class="grow"><span class="row" style="gap:6px"><span class="t1">${esc(a.name)}</span>${S.owner === 'all' ? ownerBadge(a) : ''}</span><span class="t2" style="display:block">${esc(meta)}</span></span><span class="amt${valCls}">${liab ? cad(Math.abs(bal)) + (bal < 0 ? ' owed' : '') : cad(bal)}</span></button>`;
+  const inner = `<span class="ic ${cls}" aria-hidden="true">${esc(initials(a.institution || a.name))}</span><span class="grow"><span class="t1" style="display:block">${esc(a.name)}</span><span class="row" style="gap:6px">${S.owner === 'all' ? ownerBadge(a) : ''}<span class="t2">${esc(meta)}</span></span></span><span class="amt${valCls}">${liab ? cad(Math.abs(bal)) + (bal < 0 ? ' owed' : '') : cad(bal)}</span>`;
+  if(!a.active) return `<button class="item" data-act="acct" data-id="${a.id}">${inner}</button>`;
+  const amt = `<span class="amt${valCls}">${liab ? cad(Math.abs(bal)) + (bal < 0 ? ' owed' : '') : cad(bal)}</span>`;
+  return `<div class="item acctrow${!a.nw && !S.countAll ? ' off' : ''}"><button class="rowbtn" data-act="acct" data-id="${a.id}"><span class="row sp" style="width:100%;align-items:flex-start;gap:10px"><span class="t1">${esc(a.name)}</span>${amt}</span><span class="row" style="gap:6px;width:100%;min-width:0">${S.owner === 'all' ? ownerBadge(a) : ''}<span class="t2">${esc(meta)}</span></span></button><button class="eye" data-act="nweye" data-id="${a.id}" aria-pressed="${!!a.nw}" aria-label="${a.nw ? 'Hide ' + esc(a.name) + ' from totals' : 'Count ' + esc(a.name) + ' in totals'}">${svg(a.nw ? 'eye' : 'eyeoff', 22)}</button></div>`;
 }
 
 /* ---- insights ---- */
@@ -1089,7 +1093,7 @@ document.addEventListener('click', e => {
     case 'owner': S.owner = el.dataset.v; render(); break;
     case 'hidden': S.showHidden = !S.showHidden; render(); break;
     case 'countall': S.countAll = !S.countAll; store('countAll', S.countAll); render(); break;
-    case 'nwedit': S.nwEdit = !S.nwEdit; delete S.err.nw; render(); break;
+    case 'nweye': { const a = acct(el.dataset.id); if(a) setNetWorth([a.id], !a.nw); break; }
     case 'inskind': S.insKind = el.dataset.v; render(); break;
     case 'netsel': setMonth(el.dataset.m); break;
     case 'cat': if(el.dataset.cid) openCat(el.dataset.cid, el.dataset.k); break;
@@ -1137,12 +1141,6 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target; const id = t.id || '';
-  if(t.dataset.nw){ setNetWorth([t.dataset.nw], t.checked); return; }
-  if(t.dataset.nwgroup){
-    const g = GROUPS.find(x => x.key === t.dataset.nwgroup);
-    const ids = B().accounts.filter(a => a.active && g.types.includes(a.type) && (S.owner === 'all' || ownerKey(a) === S.owner)).map(a => a.id);
-    setNetWorth(ids, t.checked); return;
-  }
   if(id === 'txacct'){ S.txAcct = t.value; S.txns = null; render(); loadTxns(); }
   else if(id === 'add-acct'){ S.add.acct = t.value; if(S.add.to === t.value) S.add.to = ''; render(); }
   else if(id === 'add-to'){ S.add.to = t.value; }

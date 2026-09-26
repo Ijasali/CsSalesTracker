@@ -14,7 +14,7 @@ The app is `app/index.html` ("Zasvia Finance"). The same page runs two ways:
 
 ### Net worth and net
 
-Each account has `in_net_worth` (set from the Accounts screen, "Choose what counts in net worth");
+Each account has `in_net_worth`, switched with the eye button on its row in Accounts (as in Money Manager);
 investments and business accounts start left out. "Count everything" on the net worth card shows
 the total with every account for the moment, without changing the setting. This is separate
 from `include_in_totals`, which decides whether an account's income and spending count.
