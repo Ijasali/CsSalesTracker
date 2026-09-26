@@ -33,7 +33,7 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 <sc-for list="{{chips}}" as="c" hint-placeholder-count="4">
 <button aria-pressed="{{c.on}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button>
 </sc-for>
-<button style="min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #E3E0D8; background: #FFFFFF; font: 600 13px Manrope, sans-serif; color: #15171A">All accounts ▾</button>
+<button style="min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #E3E0D8; background: #FFFFFF; font: 600 13px Manrope, sans-serif; color: #15171A">Everyone ▾</button>
 </div>
 
 <sc-for list="{{days}}" as="d" hint-placeholder-count="4">
@@ -73,26 +73,27 @@ var inr = function (n) { return '₹' + n.toLocaleString('en-IN'); };
 var f = this.state.filter;
 var all = [
 ['Today · 26 Sep', [['Swiggy', 'Food & dining · ICICI Amazon Pay card', -486, 'expense'], ['Uber', 'Transport & fuel · HDFC Regalia card', -312, 'expense']]],
-['Yesterday · 25 Sep', [['Reliance Smart', 'Groceries · HDFC Savings', -2140, 'expense'], ['PVR Cinemas', 'Entertainment · HDFC Regalia card', -780, 'expense']]],
+['Yesterday · 25 Sep', [['Reliance Smart', 'Groceries · HDFC Savings', -2140, 'expense'], ['PVR Cinemas', 'Entertainment · HDFC Regalia card', -780, 'expense'], ['HDFC Savings → PPF', 'Moved to an asset · not spending', 10000, 'invest']]],
 ['Wed · 24 Sep', [['Freelance payment', 'Income · ICICI Savings', 18000, 'income'], ['Airtel postpaid', 'Bills & utilities · HDFC Regalia card', -599, 'expense'], ['SBI Salary → HDFC Savings', 'Transfer between your accounts', 20000, 'transfer']]],
 ['Tue · 23 Sep', [['Apollo Pharmacy', 'Health · Cash wallet', -840, 'expense']]]
 ];
 var chipDefs = [['all', 'All'], ['expense', 'Expenses'], ['income', 'Income'], ['transfer', 'Transfers']];
 var days = all.map(function (d) {
-var items = d[1].filter(function (t) { return f === 'all' || t[3] === f; });
-var net = items.reduce(function (s, t) { return t[3] === 'transfer' ? s : s + t[2]; }, 0);
+var items = d[1].filter(function (t) { return f === 'all' || t[3] === f || (f === 'transfer' && t[3] === 'invest'); });
+var net = items.reduce(function (s, t) { return t[3] === 'transfer' || t[3] === 'invest' ? s : s + t[2]; }, 0);
 return {
 label: d[0],
 net: net === 0 ? '' : (net > 0 ? '+' : '−') + inr(Math.abs(net)),
 items: items.map(function (t) {
 var kind = t[3];
 var color = kind === 'income' ? '#1C7147' : '#15171A';
-var tint = kind === 'income' ? 'background: #E1F0E7; color: #1C7147' : (kind === 'transfer' ? 'background: #E4EDF8; color: #1D5FB4' : 'background: #ECE9E2; color: #15171A');
+var moved = kind === 'transfer' || kind === 'invest';
+var tint = kind === 'income' || kind === 'invest' ? 'background: #E1F0E7; color: #1C7147' : (kind === 'transfer' ? 'background: #E4EDF8; color: #1D5FB4' : 'background: #ECE9E2; color: #15171A');
 return {
 name: t[0], meta: t[1],
-initial: kind === 'transfer' ? '⇄' : (kind === 'income' ? 'I' : t[1].charAt(0)),
-amount: kind === 'transfer' ? inr(t[2]) : (t[2] > 0 ? '+' : '−') + inr(Math.abs(t[2])),
-amountStyle: 'font-size: 14px; font-weight: 700; color: ' + (kind === 'transfer' ? '#5B5F64' : color),
+initial: kind === 'invest' ? '↗' : (kind === 'transfer' ? '⇄' : (kind === 'income' ? 'I' : t[1].charAt(0))),
+amount: moved ? inr(t[2]) : (t[2] > 0 ? '+' : '−') + inr(Math.abs(t[2])),
+amountStyle: 'font-size: 14px; font-weight: 700; color: ' + (moved ? '#5B5F64' : color),
 iconStyle: 'width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; font: 600 16px Fraunces, serif; ' + tint
 };
 })

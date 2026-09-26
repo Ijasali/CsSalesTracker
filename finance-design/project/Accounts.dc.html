@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Accounts and cards</title>
+<title>Accounts, assets and cards</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -15,85 +15,97 @@ body{margin:0;background:#F4F2ED;font-family:Manrope,system-ui,sans-serif;color:
 a{color:#1D5FB4}a:hover{color:#154A8C}
 </style>
 </helmet>
-<div style="width: 390px; height: 1120px; box-sizing: border-box; display: flex; flex-direction: column; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
+<div style="width: 390px; height: 1800px; box-sizing: border-box; display: flex; flex-direction: column; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A">
 <main style="display: flex; flex-direction: column; gap: 16px; padding: 20px 16px 24px">
 
 <header style="display: flex; align-items: center; justify-content: space-between; min-height: 52px">
 <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-size: 26px; font-weight: 600">Accounts</h1>
-<button style="height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid #E3E0D8; background: #FFFFFF; font: 700 14px Manrope, sans-serif; color: #15171A">+ Add account</button>
+<button style="height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid #E3E0D8; background: #FFFFFF; font: 700 14px Manrope, sans-serif; color: #15171A">+ Add</button>
 </header>
 
-<section aria-label="Summary" style="display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: 20px; background: #FFFFFF">
+<div role="tablist" aria-label="Whose accounts" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: #E8E5DE">
+<sc-for list="{{owners}}" as="o" hint-placeholder-count="3">
+<button role="tab" aria-selected="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">{{o.label}}</button>
+</sc-for>
+</div>
+
+<section aria-label="Summary" style="display: flex; flex-direction: column; gap: 14px; padding: 20px; border-radius: 20px; background: #15171A; color: #FFFFFF">
 <div style="display: flex; flex-direction: column; gap: 2px">
-<span style="font-size: 13px; color: #5B5F64; font-weight: 600">Net worth</span>
-<span style="font-family: Fraunces, Georgia, serif; font-size: 32px; font-weight: 500">₹2,57,225</span>
+<span style="font-size: 13px; color: #C9CCD1; font-weight: 600">{{netLabel}}</span>
+<span style="font-family: Fraunces, Georgia, serif; font-size: 36px; font-weight: 500">{{net}}</span>
 </div>
-<div style="display: flex; height: 12px; gap: 2px">
-<div style="flex-grow: 89.9; border-radius: 4px 0 0 4px; background: #1D5FB4"></div>
-<div style="flex-grow: 10.1; border-radius: 0 4px 4px 0; background: #C2571A"></div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">Bank &amp; cash</span><span style="font-size: 14px; font-weight: 700">{{bankTotal}}</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">Assets</span><span style="font-size: 14px; font-weight: 700">{{assetTotal}}</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 12px; background: #24272B"><span style="font-size: 11px; color: #C9CCD1">Cards owed</span><span style="font-size: 14px; font-weight: 700; color: #F2B08F">{{cardTotal}}</span></div>
 </div>
-<div style="display: flex; justify-content: space-between; font-size: 13px">
-<span style="display: flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 3px; background: #1D5FB4"></span>You have ₹2,89,780</span>
-<span style="display: flex; align-items: center; gap: 6px"><span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 3px; background: #C2571A"></span>You owe ₹32,555</span>
+<sc-if value="{{isEveryone}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; justify-content: space-between; padding-top: 12px; border-top: 1px solid #33363B; font-size: 13px; color: #C9CCD1">
+<span>Me <strong style="color: #FFFFFF">₹9,74,025</strong></span>
+<span>Wife <strong style="color: #FFFFFF">₹4,87,120</strong></span>
 </div>
+</sc-if>
 </section>
 
-<section aria-labelledby="banks" style="display: flex; flex-direction: column; gap: 4px; padding: 18px 18px 8px; border-radius: 20px; background: #FFFFFF">
+<section aria-labelledby="banks" style="display: flex; flex-direction: column; padding: 18px 18px 8px; border-radius: 20px; background: #FFFFFF">
 <div style="display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 6px">
 <h2 id="banks" style="margin: 0; font-size: 15px; font-weight: 700">Bank accounts &amp; cash</h2>
-<span style="font-size: 14px; font-weight: 700">₹2,89,780</span>
+<span style="font-size: 14px; font-weight: 700">{{bankTotal}}</span>
 </div>
-<a href="Transactions.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 64px; color: #15171A; text-decoration: none">
-<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 12px; background: #E4EDF8; color: #1D5FB4; display: flex; align-items: center; justify-content: center; font: 700 13px Manrope, sans-serif">HD</span>
-<div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1"><span style="font-size: 14px; font-weight: 700">HDFC Savings</span><span style="font-size: 12px; color: #5B5F64">Savings ••4521 · updated today</span></div>
-<span style="font-size: 15px; font-weight: 700">₹1,84,250</span>
+<sc-for list="{{banks}}" as="b" hint-placeholder-count="6">
+<a href="Transactions.dc.html" style="{{b.rowStyle}}">
+<span aria-hidden="true" style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #E4EDF8; color: #1D5FB4; display: flex; align-items: center; justify-content: center; font: 700 13px Manrope, sans-serif">{{b.initials}}</span>
+<div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1">
+<span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700">{{b.name}}<span style="{{b.badgeStyle}}">{{b.owner}}</span></span>
+<span style="font-size: 12px; color: #5B5F64">{{b.meta}}</span>
+</div>
+<span style="font-size: 15px; font-weight: 700">{{b.amount}}</span>
 </a>
-<a href="Transactions.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 64px; border-top: 1px solid #EFEDE7; color: #15171A; text-decoration: none">
-<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 12px; background: #E4EDF8; color: #1D5FB4; display: flex; align-items: center; justify-content: center; font: 700 13px Manrope, sans-serif">SB</span>
-<div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1"><span style="font-size: 14px; font-weight: 700">SBI Salary</span><span style="font-size: 12px; color: #5B5F64">Salary ••0937 · updated today</span></div>
-<span style="font-size: 15px; font-weight: 700">₹62,430</span>
-</a>
-<a href="Transactions.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 64px; border-top: 1px solid #EFEDE7; color: #15171A; text-decoration: none">
-<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 12px; background: #E4EDF8; color: #1D5FB4; display: flex; align-items: center; justify-content: center; font: 700 13px Manrope, sans-serif">IC</span>
-<div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1"><span style="font-size: 14px; font-weight: 700">ICICI Savings</span><span style="font-size: 12px; color: #5B5F64">Savings ••7710 · updated 2 days ago</span></div>
-<span style="font-size: 15px; font-weight: 700">₹38,900</span>
-</a>
-<a href="Transactions.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 64px; border-top: 1px solid #EFEDE7; color: #15171A; text-decoration: none">
-<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 12px; background: #ECE9E2; color: #15171A; display: flex; align-items: center; justify-content: center; font: 700 13px Manrope, sans-serif">₹</span>
-<div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1"><span style="font-size: 14px; font-weight: 700">Cash wallet</span><span style="font-size: 12px; color: #5B5F64">Entered by hand</span></div>
-<span style="font-size: 15px; font-weight: 700">₹4,200</span>
-</a>
+</sc-for>
+</section>
+
+<section aria-labelledby="assets" style="display: flex; flex-direction: column; padding: 18px 18px 8px; border-radius: 20px; background: #FFFFFF">
+<div style="display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 2px">
+<h2 id="assets" style="margin: 0; font-size: 15px; font-weight: 700">Assets</h2>
+<span style="font-size: 14px; font-weight: 700">{{assetTotal}}</span>
+</div>
+<span style="font-size: 12px; color: #5B5F64; padding-bottom: 6px">Money moved here is saved, not spent</span>
+<sc-for list="{{assets}}" as="a" hint-placeholder-count="4">
+<div style="{{a.rowStyle}}">
+<span aria-hidden="true" style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #E1F0E7; color: #1C7147; display: flex; align-items: center; justify-content: center; font: 700 13px Manrope, sans-serif">{{a.initials}}</span>
+<div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1">
+<span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700">{{a.name}}<span style="{{a.badgeStyle}}">{{a.owner}}</span></span>
+<span style="font-size: 12px; color: #5B5F64">{{a.meta}}</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 3px; align-items: flex-end">
+<span style="font-size: 15px; font-weight: 700">{{a.amount}}</span>
+<span style="font-size: 12px; font-weight: 700; color: #1C7147">{{a.gain}}</span>
+</div>
+</div>
+</sc-for>
 </section>
 
 <section aria-labelledby="cards" style="display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 20px; background: #FFFFFF">
 <div style="display: flex; justify-content: space-between; align-items: baseline">
 <h2 id="cards" style="margin: 0; font-size: 15px; font-weight: 700">Credit cards</h2>
-<span style="font-size: 14px; font-weight: 700">₹32,555 owed</span>
+<span style="font-size: 14px; font-weight: 700">{{cardTotal}} owed</span>
 </div>
-
+<sc-for list="{{cards}}" as="c" hint-placeholder-count="3">
 <a href="Transactions.dc.html" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; border: 1px solid #E3E0D8; color: #15171A; text-decoration: none">
 <div style="display: flex; justify-content: space-between; align-items: flex-start">
-<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 700">HDFC Regalia</span><span style="font-size: 12px; color: #5B5F64">Card ••8812</span></div>
-<div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end"><span style="font-size: 16px; font-weight: 700">₹23,640</span><span style="font-size: 12px; color: #5B5F64">owed</span></div>
+<div style="display: flex; flex-direction: column; gap: 3px">
+<span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700">{{c.name}}<span style="{{c.badgeStyle}}">{{c.owner}}</span></span>
+<span style="font-size: 12px; color: #5B5F64">{{c.meta}}</span>
 </div>
-<div role="progressbar" aria-label="Credit limit used" aria-valuenow="8" aria-valuemin="0" aria-valuemax="100" style="height: 8px; border-radius: 4px; background: #ECE9E2"><div style="width: 8%; height: 8px; border-radius: 4px; background: #C2571A"></div></div>
+<div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end"><span style="font-size: 16px; font-weight: 700">{{c.amount}}</span><span style="font-size: 12px; color: #5B5F64">owed</span></div>
+</div>
+<div role="progressbar" aria-label="Credit limit used" aria-valuenow="{{c.pct}}" aria-valuemin="0" aria-valuemax="100" style="height: 8px; border-radius: 4px; background: #ECE9E2"><div style="{{c.barStyle}}"></div></div>
 <div style="display: flex; justify-content: space-between; font-size: 12px; color: #5B5F64">
-<span>8% of ₹3,00,000 limit</span>
-<span style="color: #8F3312; font-weight: 700">Due 5 Oct · 9 days</span>
+<span>{{c.limit}}</span>
+<span style="{{c.dueStyle}}">{{c.due}}</span>
 </div>
 </a>
-
-<a href="Transactions.dc.html" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; border: 1px solid #E3E0D8; color: #15171A; text-decoration: none">
-<div style="display: flex; justify-content: space-between; align-items: flex-start">
-<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 700">ICICI Amazon Pay</span><span style="font-size: 12px; color: #5B5F64">Card ••3306</span></div>
-<div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end"><span style="font-size: 16px; font-weight: 700">₹8,915</span><span style="font-size: 12px; color: #5B5F64">owed</span></div>
-</div>
-<div role="progressbar" aria-label="Credit limit used" aria-valuenow="6" aria-valuemin="0" aria-valuemax="100" style="height: 8px; border-radius: 4px; background: #ECE9E2"><div style="width: 6%; height: 8px; border-radius: 4px; background: #C2571A"></div></div>
-<div style="display: flex; justify-content: space-between; font-size: 12px; color: #5B5F64">
-<span>6% of ₹1,50,000 limit</span>
-<span>Due 12 Oct · 16 days</span>
-</div>
-</a>
+</sc-for>
 </section>
 
 </main>
@@ -107,10 +119,69 @@ a{color:#1D5FB4}a:hover{color:#154A8C}
 </nav>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1120}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1800}}'>
 class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { owner: 'all' };
+}
 renderVals() {
-return {};
+var inr = function (n) { return '₹' + n.toLocaleString('en-IN'); };
+var who = this.state.owner;
+var mine = function (r) { return who === 'all' || r.owner === who; };
+var badge = function (o) {
+if (who !== 'all') return 'display: none';
+return 'padding: 1px 7px; border-radius: 8px; font-size: 11px; font-weight: 700; ' + (o === 'me' ? 'background: #E4EDF8; color: #154A8C' : 'background: #EEE8F7; color: #553A95');
+};
+var ownerName = function (o) { return o === 'me' ? 'Me' : 'Wife'; };
+var row = function (i) { return 'display: flex; align-items: center; gap: 12px; min-height: 64px; color: #15171A; text-decoration: none;' + (i ? ' border-top: 1px solid #EFEDE7' : ''); };
+var sum = function (xs) { return xs.reduce(function (s, x) { return s + x.value; }, 0); };
+
+var banks = [
+{ owner: 'me', initials: 'HD', name: 'HDFC Savings', meta: 'Savings ••4521', value: 184250 },
+{ owner: 'me', initials: 'SB', name: 'SBI Salary', meta: 'Salary ••0937', value: 62430 },
+{ owner: 'me', initials: 'IC', name: 'ICICI Savings', meta: 'Savings ••7710', value: 38900 },
+{ owner: 'me', initials: '₹', name: 'Cash wallet', meta: 'Entered by hand', value: 4200 },
+{ owner: 'wife', initials: 'FB', name: 'Federal Bank Savings', meta: 'Savings ••2248', value: 96400 },
+{ owner: 'wife', initials: 'AX', name: 'Axis Savings', meta: 'Savings ••6605', value: 41750 }
+].filter(mine);
+var assets = [
+{ owner: 'me', initials: 'MF', name: 'Mutual funds', meta: 'SIP ₹15,000 on the 5th', invested: 360000, value: 412600 },
+{ owner: 'me', initials: 'PF', name: 'PPF', meta: '₹10,000 added this month', invested: 285000, value: 304200 },
+{ owner: 'wife', initials: 'FD', name: 'Fixed deposit', meta: '7.1% · matures Mar 2027', invested: 200000, value: 208450 },
+{ owner: 'wife', initials: 'AU', name: 'Gold bonds', meta: '12 g · value updated 26 Sep', invested: 120000, value: 146800 }
+].filter(mine);
+var cards = [
+{ owner: 'me', name: 'HDFC Regalia', meta: 'Card ••8812', value: 23640, limit: 300000, due: 'Due 5 Oct · 9 days', soon: true },
+{ owner: 'me', name: 'ICICI Amazon Pay', meta: 'Card ••3306', value: 8915, limit: 150000, due: 'Due 12 Oct · 16 days', soon: false },
+{ owner: 'wife', name: 'Axis Flipkart', meta: 'Card ••1174', value: 6280, limit: 100000, due: 'Due 8 Oct · 12 days', soon: true }
+].filter(mine);
+
+var bankTotal = sum(banks), assetTotal = sum(assets), cardTotal = sum(cards);
+return {
+owners: [['all', 'Everyone'], ['me', 'Me'], ['wife', 'Wife']].map((o) => ({
+label: o[1], on: who === o[0], pick: () => this.setState({ owner: o[0] }),
+style: 'min-height: 44px; border-radius: 10px; border: 0; font: 700 14px Manrope, sans-serif; color: ' + (who === o[0] ? '#15171A' : '#5B5F64') + '; background: ' + (who === o[0] ? '#FFFFFF' : 'transparent')
+})),
+isEveryone: who === 'all',
+netLabel: who === 'all' ? 'Household net worth' : (who === 'me' ? 'My net worth' : 'Wife’s net worth'),
+net: inr(bankTotal + assetTotal - cardTotal),
+bankTotal: inr(bankTotal), assetTotal: inr(assetTotal), cardTotal: inr(cardTotal),
+banks: banks.map(function (b, i) { return { initials: b.initials, name: b.name, meta: b.meta, amount: inr(b.value), owner: ownerName(b.owner), badgeStyle: badge(b.owner), rowStyle: row(i) }; }),
+assets: assets.map(function (a, i) {
+var gain = a.value - a.invested;
+return { initials: a.initials, name: a.name, meta: a.meta, amount: inr(a.value), gain: '+' + inr(gain) + ' (' + (gain / a.invested * 100).toFixed(1) + '%)', owner: ownerName(a.owner), badgeStyle: badge(a.owner), rowStyle: row(i) };
+}),
+cards: cards.map(function (c) {
+var pct = Math.round(c.value / c.limit * 100);
+return {
+name: c.name, meta: c.meta, amount: inr(c.value), owner: ownerName(c.owner), badgeStyle: badge(c.owner),
+pct: pct, limit: pct + '% of ' + inr(c.limit) + ' limit', due: c.due,
+dueStyle: c.soon ? 'color: #8F3312; font-weight: 700' : '',
+barStyle: 'width: ' + Math.max(pct, 2) + '%; height: 8px; border-radius: 4px; background: #C2571A'
+};
+})
+};
 }
 }
 </script>
