@@ -428,7 +428,8 @@ $$;
 
 -- Current balance of every account. Investments, property, mortgages and loans use their latest
 -- snapshot plus anything recorded after it; other accounts add every transaction to the opening
--- balance. contributed = money put in, for showing an investment's gain.
+-- balance. contributed = money put in, for showing an investment's gain. Inactive accounts are
+-- included (is_active tells them apart) so the app can list them separately.
 create view public.account_balances with (security_invoker = true) as
 select
   a.id as account_id,
@@ -438,6 +439,8 @@ select
   a.institution,
   a.type,
   a.include_in_totals,
+  a.is_active,
+  a.sort_order,
   case
     when a.type in ('tfsa', 'rrsp', 'fhsa', 'resp', 'gic', 'non_registered', 'crypto', 'property', 'mortgage', 'loan', 'receivable', 'business')
       and s.balance is not null
@@ -454,13 +457,13 @@ select
     select sum(t.amount) from public.transactions t
     where t.account_id = a.id and t.txn_date >= a.opening_date
   ), 0) as contributed,
-  s.as_of as valued_on
+  s.as_of as valued_on,
+  (select max(t.txn_date) from public.transactions t where t.account_id = a.id) as last_txn
 from public.accounts a
 left join lateral (
   select b.balance, b.as_of from public.balance_snapshots b
   where b.account_id = a.id order by b.as_of desc limit 1
-) s on true
-where a.is_active;
+) s on true;
 
 -- Spending per month, category and subcategory (positive numbers; refunds reduce them).
 -- category_id is the top-level category; uncategorised spending has null ids.

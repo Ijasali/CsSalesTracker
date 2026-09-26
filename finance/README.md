@@ -1,5 +1,11 @@
 # Household finance tracker: database and data entry
 
+The app is `app/index.html`, published as a private Claude artifact ("Manalody Money"). It reads and
+writes the `household-finance` Supabase project through the viewer's Supabase connector
+(`execute_sql`), so it only works when opened from claude.ai or the Claude app. Screenshots are read
+by Claude through the artifact's `sample` capability; the page then checks each row against the
+database (`make_fingerprint`, `find_possible_duplicates`, `match_category_rule`) before saving.
+
 The screens are designed in `../finance-design/`. This folder holds the Supabase database
 (`supabase/migrations/`) and how transactions get into it without typing each one.
 
