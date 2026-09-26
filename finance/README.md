@@ -3,8 +3,30 @@
 The screens are designed in `../finance-design/`. This folder holds the Supabase database
 (`supabase/migrations/`) and how transactions get into it without typing each one.
 
-The schema has been applied to a local Postgres 16 and tested, but not yet to a Supabase project.
-It will go into a new project of its own, separate from `cybersquare-outreach`.
+The schema is applied to the Supabase project `household-finance` (ca-central-1), separate from
+`cybersquare-outreach`, and was also tested on a local Postgres 16.
+
+## History imported from Money Manager
+
+The previous app's export (2018-09 to 2026-09) was imported once, with `source = 'legacy'`:
+
+- Every account in the export became an account (owner Ijas, Sherifa or joint; business accounts are
+  kept but have `include_in_totals = false`). Accounts with no activity in 18 months are inactive.
+- Its two-level categories became `categories` as they were.
+- Expenses and income became transactions; each transfer (exported as a money-out row and a
+  money-in row) became one pair sharing a `transfer_group_id`. Rows of $0.00 were skipped.
+- Each row has `external_id = 'mm:<hash of its fields>:<n>'`, so importing a later export from the
+  same app adds only new rows.
+- The free-text notes (mostly merchant names) became `payee`. A payee that went to the same category
+  at least 80% of the time, 3+ times, became a `category_rules` row (`origin = 'legacy'`). Merchants
+  used for many categories (Costco, Walmart, Dollarama) have no rule and are left for review.
+
+Checked after import: transaction count and total per account equal the export's, and monthly
+category totals match the old app.
+
+The export has no opening balances, so account balances are only right once each account gets a
+real balance: a `balance_snapshots` row (investments, loans) or an `opening_balance` (bank accounts
+and cards).
 
 ## Tables
 

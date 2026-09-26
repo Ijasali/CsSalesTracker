@@ -14,9 +14,12 @@ create extension if not exists pg_trgm with schema extensions;
 -- ---------------------------------------------------------------------------------------------
 
 create type public.account_type as enum (
-  'chequing', 'savings', 'cash', 'credit_card',
-  'tfsa', 'rrsp', 'fhsa', 'resp', 'gic', 'non_registered',
-  'property', 'mortgage', 'loan'
+  'chequing', 'savings', 'cash', 'prepaid', 'credit_card', 'line_of_credit',
+  'tfsa', 'rrsp', 'fhsa', 'resp', 'gic', 'non_registered', 'crypto',
+  'property', 'mortgage', 'loan',
+  -- money lent to someone else
+  'receivable',
+  'business'
 );
 create type public.txn_kind as enum ('expense', 'income', 'transfer', 'adjustment');
 create type public.txn_status as enum ('pending', 'posted');
@@ -83,6 +86,8 @@ create table public.accounts (
   renewal_date date,
   original_principal numeric(14, 2),
   is_active boolean not null default true,
+  -- false keeps the account (for example a business account) out of household totals
+  include_in_totals boolean not null default true,
   sort_order integer not null default 0,
   created_at timestamptz not null default now(),
   unique (household_id, name),
@@ -101,7 +106,7 @@ create table public.categories (
   sort_order integer not null default 0,
   is_archived boolean not null default false,
   created_at timestamptz not null default now(),
-  unique nulls not distinct (household_id, parent_id, name),
+  unique nulls not distinct (household_id, parent_id, kind, name),
   unique (id, household_id),
   foreign key (parent_id, household_id)
     references public.categories (id, household_id) on delete cascade
@@ -432,8 +437,9 @@ select
   a.name,
   a.institution,
   a.type,
+  a.include_in_totals,
   case
-    when a.type in ('tfsa', 'rrsp', 'fhsa', 'resp', 'gic', 'non_registered', 'property', 'mortgage', 'loan')
+    when a.type in ('tfsa', 'rrsp', 'fhsa', 'resp', 'gic', 'non_registered', 'crypto', 'property', 'mortgage', 'loan', 'receivable', 'business')
       and s.balance is not null
       then s.balance + coalesce((
         select sum(t.amount) from public.transactions t
@@ -538,3 +544,5 @@ create policy "members manage balance snapshots" on public.balance_snapshots
 
 revoke execute on function public.create_household(text, text) from public, anon;
 grant execute on function public.create_household(text, text) to authenticated;
+revoke execute on function public.is_household_member(uuid) from public, anon;
+grant execute on function public.is_household_member(uuid) to authenticated;
