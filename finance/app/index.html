@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Manalody Money</title>
-<meta name="description" content="Household money app for Ijas and Sherifa: accounts, spending by category, budgets and transactions, read from the household-finance Supabase database.">
+<title>Zasvia Finance</title>
+<meta name="description" content="Zasvia Finance: household money app for Ijas and Sherifa: accounts, spending by category, budgets and transactions, read from the household-finance Supabase database.">
 <meta name="theme-color" content="#F4F2ED" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Money">
+<meta name="apple-mobile-web-app-title" content="Zasvia">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,6 +24,7 @@
   --hero:#15171A; --hero-2:#24272B; --hero-ink:#FFFFFF; --hero-muted:#C9CCD1; --hero-owed:#F2B08F;
   --wife:#553A95; --wife-soft:#EEE8F7; --joint:#3F4348; --joint-soft:#ECE9E2;
   --bar:#6E9AD6; --bar-sel:#16427F; --avg:#8C877C; --shadow:0 1px 2px rgba(21,23,26,.05);
+  --gain:#2A6CC4; --loss:#C2571A;
   --display:"Fraunces",Georgia,"Times New Roman",serif; --body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
 }
 @media (prefers-color-scheme: dark){
@@ -35,6 +36,7 @@
     --hero:#23272D; --hero-2:#2E333A; --hero-ink:#FFFFFF; --hero-muted:#AEB3BA; --hero-owed:#F2B08F;
     --wife:#C4B2F0; --wife-soft:#2E2640; --joint:#C4C7CC; --joint-soft:#2A2E34;
     --bar:#4F74A8; --bar-sel:#A9C8F5; --avg:#8C877C; --shadow:none;
+    --gain:#5B8FD6; --loss:#D0703F;
   }
 }
 :root[data-theme="dark"]{
@@ -45,6 +47,7 @@
   --hero:#23272D; --hero-2:#2E333A; --hero-ink:#FFFFFF; --hero-muted:#AEB3BA; --hero-owed:#F2B08F;
   --wife:#C4B2F0; --wife-soft:#2E2640; --joint:#C4C7CC; --joint-soft:#2A2E34;
   --bar:#4F74A8; --bar-sel:#A9C8F5; --avg:#8C877C; --shadow:none;
+  --gain:#5B8FD6; --loss:#D0703F;
 }
 html,body{height:100%}
 body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
@@ -73,6 +76,9 @@ h2{margin:0;font-size:15px;font-weight:700}
 .mtile{background:var(--card);border-radius:16px;padding:14px 12px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--shadow)}
 .mtile .k{font-size:12px;color:var(--muted);font-weight:600} .mtile .v{font-size:15px;font-weight:700;white-space:nowrap}
 @media (max-width:380px){.mtile .v{font-size:13px}.tile .v{font-size:13px}}
+.hero-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:12px;color:var(--hero-muted)}
+.hero-note button{min-height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--hero-muted);background:transparent;color:var(--hero-ink);font-weight:700;font-size:12px;cursor:pointer}
+.item.off .t1,.item.off .amt{color:var(--muted)}
 .pos{color:var(--good)} .neg{color:var(--warn)} .owed{color:var(--hero-owed)}
 .bar{height:8px;border-radius:4px;background:var(--track);overflow:hidden} .bar>i{display:block;height:100%;border-radius:4px;background:var(--accent)}
 .bar.lg{height:10px;border-radius:5px} .bar>i.over{background:var(--warn-bar)} .bar>i.inc{background:var(--good)}
@@ -138,6 +144,20 @@ nav.tabs .add{width:52px;height:52px;border-radius:26px;background:var(--ink);co
 .review select{min-height:40px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:13px;max-width:100%}
 .check{width:22px;height:22px;accent-color:var(--accent);flex-shrink:0}
 .skel{color:var(--muted);font-size:14px;padding:12px 0}
+.nplot{position:relative;height:190px;display:flex}
+.ncol{position:relative;flex-shrink:0;width:52px;height:100%;border:0;background:none;padding:0;cursor:pointer;border-radius:8px}
+.ncol[aria-pressed="true"]{background:var(--track)}
+.ncol i{position:absolute;left:12px;right:12px;display:block}
+.ncol i.g{background:var(--gain);border-radius:4px 4px 0 0} .ncol i.l{background:var(--loss);border-radius:0 0 4px 4px}
+.ncol span{position:absolute;left:0;right:0;text-align:center;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap}
+.ncol[aria-pressed="true"] span{color:var(--ink)}
+.nzero{position:absolute;left:0;right:0;border-top:1px solid var(--ink2);pointer-events:none}
+.key{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:4px}
+.ntable{width:100%;border-collapse:collapse;font-size:13px}
+.ntable th{font-size:12px;color:var(--muted);font-weight:700;text-align:right;padding:6px 0}
+.ntable th:first-child,.ntable td:first-child{text-align:left}
+.ntable td{text-align:right;padding:8px 0;border-top:1px solid var(--line2);white-space:nowrap}
+.ntable tr.on td{font-weight:700}
 @media (prefers-reduced-motion:no-preference){.chart{scroll-behavior:smooth}}
 </style>
 
@@ -168,6 +188,7 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const MONTHS_L = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const S = {
+  countAll: false, nwEdit: false, net: null,
   view: 'home', stack: [], mcp: null, sample: null, imgOK: false, web: false, sb: null, user: null, login: null, unlinked: false, pending: null,
   boot: null, month: null, monthData: {}, recent: null, txns: null, cat: null,
   owner: 'all', showHidden: false, insKind: 'expense', txq: '', txKind: 'all', txAcct: '', txMonth: null,
@@ -342,6 +363,7 @@ async function loadCat(){
 }
 const loadCatTx = () => load('cat', async () => { S.cat.tx = (await api('app_cat_tx', {cid: S.cat.cid, m: S.cat.sel, kind: S.cat.kind})) || []; });
 async function refreshAll(){
+  S.net = null; delete S.err.net;
   await loadBoot();
   if(!S.boot) return;
   await Promise.all([loadMonth(S.month), loadRecent()]);
@@ -367,19 +389,26 @@ function render(){
   let body;
   let app = false;
   if(S.noRuntime) body = viewNoRuntime();
-  else if(S.fatal) body = `<main>${hdr('Manalody Money')}${banner(S.fatal, true)}</main>`;
-  else if(S.web && !S.authReady) body = `<main>${hdr('Manalody Money')}<div class="skel">Loading…</div></main>`;
+  else if(S.fatal) body = `<main>${hdr('Zasvia Finance')}${banner(S.fatal, true)}</main>`;
+  else if(S.web && !S.authReady) body = `<main>${hdr('Zasvia Finance')}<div class="skel">Loading…</div></main>`;
   else if(S.web && !S.user) body = viewLogin();
   else if(S.unlinked) body = viewUnlinked();
-  else if(!S.boot) body = S.err.boot ? `<main>${hdr('Manalody Money')}${banner(S.err.boot, true)}<div class="row wrap"><button class="btn" data-act="reload">${svg('refresh', 18)} Try again</button>${S.web ? '<button class="btn" data-act="signout">Sign out</button>' : ''}</div></main>` : `<main>${hdr('Manalody Money')}<div class="skel">Loading your accounts…</div></main>`;
+  else if(!S.boot) body = S.err.boot ? `<main>${hdr('Zasvia Finance')}${banner(S.err.boot, true)}<div class="row wrap"><button class="btn" data-act="reload">${svg('refresh', 18)} Try again</button>${S.web ? '<button class="btn" data-act="signout">Sign out</button>' : ''}</div></main>` : `<main>${hdr('Zasvia Finance')}<div class="skel">Loading your accounts…</div></main>`;
   else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport})[S.view](); }
   root.innerHTML = body + (app ? tabs() : '') + (S.sheet ? sheet() : '') + (S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : '');
   if(focus){ const el = document.getElementById(focus.id); if(el){ el.focus(); try { if(focus.s != null) el.setSelectionRange(focus.s, focus.s); } catch(e){} } }
+  document.querySelectorAll('[data-mixed]').forEach(el => { el.indeterminate = true; });
   const ch = $('.chart');
+  if(ch) ch.style.scrollBehavior = 'auto';
+  if(ch && S.view === 'insights' && S.insKind === 'net'){
+    if(!S.netScrolled){ S.netScrolled = true; const sel = ch.querySelector('[aria-pressed="true"]'); ch.scrollLeft = sel ? sel.offsetLeft - ch.clientWidth / 2 + 26 : ch.scrollWidth; }
+    else if(chartScroll != null) ch.scrollLeft = chartScroll;
+  }
   if(ch && S.view === 'cat' && S.cat){
     if(!S.cat.scrolled && S.cat.rows){ S.cat.scrolled = true; const sel = ch.querySelector('[aria-pressed="true"]'); ch.scrollLeft = sel ? sel.offsetLeft - ch.clientWidth / 2 + 26 : ch.scrollWidth; }
     else if(chartScroll != null) ch.scrollLeft = chartScroll;
   }
+  if(ch) requestAnimationFrame(() => { ch.style.scrollBehavior = ''; });
 }
 function hdr(title, sub, right, backBtn){
   return `<header class="hdr"><div class="l">${backBtn ? `<button class="icon-btn" data-act="back" aria-label="Back">${svg('left', 18)}</button>` : ''}<div style="min-width:0">${sub ? `<div class="sub">${esc(sub)}</div>` : ''}<h1>${esc(title)}</h1></div></div>${right || ''}</header>`;
@@ -397,7 +426,7 @@ function monthNav(m, act){
 /* ---- web sign-in ---- */
 function viewLogin(){
   const l = S.login; const up = l.mode === 'up';
-  let h = `<main>${hdr(up ? 'Create your login' : 'Sign in', 'Manalody Money')}<section class="card">
+  let h = `<main><img src="icon-192.png" alt="Zasvia Finance" width="88" height="88" style="border-radius:20px;margin-top:12px">${hdr(up ? 'Create your login' : 'Sign in', 'Zasvia Finance')}<section class="card">
     <span class="sm muted">${up ? 'Use your own email and a password of at least 8 characters. Once you’re in, Ijas or Sherifa lets your login into the household.' : 'Sign in to see the household’s money.'}</span>
     <form data-form="login" style="display:flex;flex-direction:column;gap:14px">
     <label class="field"><span>Email</span><input id="login-email" class="inp" type="email" autocomplete="email" inputmode="email" required value="${esc(l.email)}"></label>
@@ -410,7 +439,7 @@ function viewLogin(){
 }
 function viewUnlinked(){
   const email = S.user && S.user.email;
-  return `<main>${hdr('Almost there', 'Manalody Money')}<section class="card"><span class="b">You’re signed in as ${esc(email)}</span>
+  return `<main>${hdr('Almost there', 'Zasvia Finance')}<section class="card"><span class="b">You’re signed in as ${esc(email)}</span>
     <span class="sm">This login isn’t part of the household yet. Ask whoever already uses the app to open <b>Home</b>, tap the person button at the top, and choose you next to <b>${esc(email)}</b>. Then tap Check again.</span>
     ${S.err.boot ? banner(S.err.boot, true) : ''}
     <div class="row wrap"><button class="btn accent" data-act="reload">${svg('refresh', 18)} Check again</button><button class="btn" data-act="signout">Sign out</button></div></section></main>`;
@@ -487,17 +516,26 @@ function peopleSheet(){
 }
 
 function viewNoRuntime(){
-  return `<main>${hdr('Manalody Money')}${banner('Open this app from claude.ai or the Claude app. It reads your household database through your Supabase connector, which only works there.')}</main>`;
+  return `<main>${hdr('Zasvia Finance')}${banner('Open this app from claude.ai or the Claude app. It reads your household database through your Supabase connector, which only works there.')}</main>`;
 }
 
 /* ---- balances ---- */
+// Net worth counts active accounts marked "in net worth" (a.nw), or every active account while
+// "Count everything" is on.
+function nwNote(tot){
+  const hiddenN = B().accounts.filter(a => a.active && !a.nw).length;
+  if(S.countAll) return hiddenN ? `<div class="hero-note"><span>Counting every account</span><button data-act="countall">Leave out ${hiddenN} hidden</button></div>` : '';
+  if(!tot.leftN) return '';
+  return `<div class="hero-note"><span>Leaves out ${tot.leftN} account${tot.leftN > 1 ? 's' : ''} (${cad0(tot.leftOut)})</span><button data-act="countall">Count everything</button></div>`;
+}
 function totals(filterOwner){
-  const r = {assets: 0, owed: 0, bank: 0, inv: 0, byOwner: {}};
+  const r = {assets: 0, owed: 0, bank: 0, inv: 0, byOwner: {}, leftOut: 0, leftN: 0};
   for(const a of B().accounts){
-    if(!a.active || !a.incl) continue;
+    if(!a.active) continue;
     const k = ownerKey(a);
     if(filterOwner && filterOwner !== 'all' && k !== filterOwner) continue;
     const bal = Number(a.bal) || 0;
+    if(!a.nw && !S.countAll){ r.leftOut += bal; r.leftN++; continue; }
     r.byOwner[k] = (r.byOwner[k] || 0) + bal;
     if(LIAB.includes(a.type)){ r.owed += -bal; }
     else { r.assets += bal; if(['chequing','savings','cash','prepaid'].includes(a.type)) r.bank += bal; else r.inv += bal; }
@@ -527,7 +565,7 @@ function viewHome(){
   let h = `<main>${hdr('Your money', d, `<div class="row">${S.web ? `<button class="icon-btn" data-act="people" aria-label="Household and sign out">${svg('user', 18)}</button>` : ''}<button class="icon-btn" data-act="reload" aria-label="Refresh">${svg('refresh', 18)}</button></div>`)}`;
   if(B().review > 0) h += `<button class="banner" data-act="review" style="border:0;text-align:left;cursor:pointer">${svg('alert', 18)}<span><b>${B().review}</b> transaction${B().review > 1 ? 's' : ''} need a category check. Tap to review.</span></button>`;
   h += `<section class="hero" aria-label="Net worth"><div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Household net worth</span><span class="big">${cad(tot.net)}</span>
-    <div class="row wrap xs" style="column-gap:12px;row-gap:2px;color:var(--hero-muted)">${ms.map((m, i) => `<span>${esc(m.name)} <b style="color:var(--hero-ink)">${cad(tot.byOwner['m' + i] || 0)}</b></span>`).join('')}<span>Joint <b style="color:var(--hero-ink)">${cad(tot.byOwner.joint || 0)}</b></span></div></div>
+    <div class="row wrap xs" style="column-gap:12px;row-gap:2px;color:var(--hero-muted)">${ms.map((m, i) => `<span>${esc(m.name)} <b style="color:var(--hero-ink)">${cad(tot.byOwner['m' + i] || 0)}</b></span>`).join('')}<span>Joint <b style="color:var(--hero-ink)">${cad(tot.byOwner.joint || 0)}</b></span></div>${nwNote(tot)}</div>
     <div class="tiles"><button class="tile" data-act="tab" data-v="accounts"><span class="k">Bank & cash</span><span class="v">${cad0(tot.bank)}</span></button><button class="tile" data-act="tab" data-v="accounts"><span class="k">Investments</span><span class="v">${cad0(tot.inv)}</span></button><button class="tile" data-act="tab" data-v="accounts"><span class="k">Owed</span><span class="v owed">${cad0(tot.owed)}</span></button></div></section>`;
   if(S.err.month) h += banner(S.err.month, true);
   if(!md) h += `<div class="skel">Loading ${esc(mLabel(S.month))}…</div>`;
@@ -571,19 +609,27 @@ function viewAccounts(){
   const opts = [['all', 'Everyone'], ...ms.map((m, i) => ['m' + i, m.name]), ['joint', 'Joint']];
   const tot = totals(own);
   let h = `<main>${hdr('Accounts')}<div class="seg" role="group" aria-label="Whose accounts" style="grid-template-columns:repeat(${opts.length},minmax(0,1fr))">${opts.map(o => `<button data-act="owner" data-v="${o[0]}" aria-pressed="${own === o[0]}">${esc(o[1])}</button>`).join('')}</div>
-    <section class="hero" aria-label="Summary"><span class="lbl">${own === 'all' ? 'Household net worth' : (own === 'joint' ? 'Joint net worth' : esc(ms[+own.slice(1)].name) + '’s net worth')}</span><span class="big">${cad(tot.net)}</span>
+    <section class="hero" aria-label="Summary"><span class="lbl">${own === 'all' ? 'Household net worth' : (own === 'joint' ? 'Joint net worth' : esc(ms[+own.slice(1)].name) + '’s net worth')}</span><span class="big">${cad(tot.net)}</span>${nwNote(tot)}
     <div class="tiles"><div class="tile" style="cursor:default"><span class="k">Bank & cash</span><span class="v">${cad0(tot.bank)}</span></div><div class="tile" style="cursor:default"><span class="k">Investments</span><span class="v">${cad0(tot.inv)}</span></div><div class="tile" style="cursor:default"><span class="k">Owed</span><span class="v owed">${cad0(tot.owed)}</span></div></div></section>`;
   const accs = B().accounts.filter(a => own === 'all' || ownerKey(a) === own);
+  h += S.nwEdit
+    ? `<div class="banner"><span class="grow">Tick the accounts that count towards net worth. Changes save straight away and apply for both of you.</span><button class="btn accent" data-act="nwedit" style="min-height:36px">Done</button></div>`
+    : `<button class="link" data-act="nwedit" style="align-self:flex-start">Choose what counts in net worth</button>`;
+  if(S.err.nw) h += banner(S.err.nw, true);
   for(const g of GROUPS){
     const list = accs.filter(a => a.active && g.types.includes(a.type));
     if(!list.length) continue;
-    const sum = list.filter(a => a.incl).reduce((s, a) => s + Number(a.bal), 0);
-    h += `<section class="card tight"><div class="row sp" style="padding-top:10px"><h2>${g.title}</h2><span class="b">${cad(sum)}</span></div><div class="list">${list.sort((a, b) => Math.abs(b.bal) - Math.abs(a.bal)).map(acctRow).join('')}</div></section>`;
+    const sum = list.reduce((s, a) => s + Number(a.bal), 0);
+    const on = list.filter(a => a.nw).length;
+    const head = S.nwEdit
+      ? `<label class="row sp" style="padding-top:10px;cursor:pointer"><span class="row" style="gap:10px"><input type="checkbox" class="check" data-nwgroup="${g.key}"${on === list.length ? ' checked' : ''}${on && on < list.length ? ' data-mixed="1"' : ''} aria-label="Count all ${esc(g.title)}"><h2>${g.title}</h2></span><span class="b" style="white-space:nowrap">${cad(sum)}</span></label>`
+      : `<div class="row sp" style="padding-top:10px"><h2>${g.title}</h2><span class="b" style="white-space:nowrap">${cad(sum)}</span></div>`;
+    h += `<section class="card tight">${head}<div class="list">${list.sort((a, b) => Math.abs(b.bal) - Math.abs(a.bal)).map(acctRow).join('')}</div></section>`;
   }
   const hidden = accs.filter(a => !a.active);
   if(hidden.length){
     h += `<button class="link" data-act="hidden" style="align-self:flex-start">${S.showHidden ? 'Hide' : 'Show'} ${hidden.length} inactive account${hidden.length > 1 ? 's' : ''}</button>`;
-    if(S.showHidden) h += `<section class="card tight"><div class="list">${hidden.map(acctRow).join('')}</div><span class="xs muted" style="padding-bottom:10px">No activity in the last 18 months. They are not counted in net worth.</span></section>`;
+    if(S.showHidden) h += `<section class="card tight"><div class="list">${hidden.map(acctRow).join('')}</div><span class="xs muted" style="padding-bottom:10px">No activity in the last 18 months. They never count in net worth.</span></section>`;
   }
   return h + `</main>`;
 }
@@ -592,17 +638,19 @@ function acctRow(a){
   const cls = liab ? 'debt' : (inv ? 'inv' : 'acct');
   const typeLabel = {chequing:'Chequing', savings:'Savings', cash:'Cash', prepaid:'Prepaid card', credit_card:'Credit card', line_of_credit:'Line of credit', tfsa:'TFSA', rrsp:'RRSP', fhsa:'FHSA', resp:'RESP', gic:'GIC', non_registered:'Investment', crypto:'Crypto', business:'Business', property:'Property', mortgage:'Mortgage', loan:'Loan', receivable:'Money lent'}[a.type] || a.type;
   const bal = Number(a.bal);
-  const meta = [typeLabel, a.institution, a.incl ? '' : 'not in totals', a.last_txn ? 'last ' + a.last_txn : ''].filter(Boolean).join(' · ');
+  const meta = [typeLabel, a.institution, a.active && !a.nw ? 'not in net worth' : '', a.incl ? '' : 'spending not counted', a.last_txn ? 'last ' + a.last_txn : ''].filter(Boolean).join(' · ');
   const valCls = liab ? (bal < 0 ? ' neg' : '') : '';
-  return `<button class="item" data-act="acct" data-id="${a.id}"><span class="ic ${cls}" aria-hidden="true">${esc(initials(a.institution || a.name))}</span><span class="grow"><span class="row" style="gap:6px"><span class="t1">${esc(a.name)}</span>${S.owner === 'all' ? ownerBadge(a) : ''}</span><span class="t2" style="display:block">${esc(meta)}</span></span><span class="amt${valCls}">${liab ? cad(Math.abs(bal)) + (bal < 0 ? ' owed' : '') : cad(bal)}</span></button>`;
+  if(S.nwEdit && a.active) return `<label class="item"><input type="checkbox" class="check" data-nw="${a.id}"${a.nw ? ' checked' : ''} aria-label="Count ${esc(a.name)} in net worth"><span class="grow"><span class="t1" style="display:block">${esc(a.name)}</span><span class="t2" style="display:block">${esc(typeLabel)}${S.owner === 'all' && member(a.owner) ? ' · ' + esc(member(a.owner).name) : (S.owner === 'all' && !a.owner ? ' · Joint' : '')}</span></span><span class="amt">${liab ? cad(Math.abs(bal)) + (bal < 0 ? ' owed' : '') : cad(bal)}</span></label>`;
+  return `<button class="item${a.active && !a.nw && !S.countAll ? ' off' : ''}" data-act="acct" data-id="${a.id}"><span class="ic ${cls}" aria-hidden="true">${esc(initials(a.institution || a.name))}</span><span class="grow"><span class="row" style="gap:6px"><span class="t1">${esc(a.name)}</span>${S.owner === 'all' ? ownerBadge(a) : ''}</span><span class="t2" style="display:block">${esc(meta)}</span></span><span class="amt${valCls}">${liab ? cad(Math.abs(bal)) + (bal < 0 ? ' owed' : '') : cad(bal)}</span></button>`;
 }
 
 /* ---- insights ---- */
 function viewInsights(){
   const md = S.monthData[S.month]; const k = S.insKind;
-  let h = `<main>${hdr('Insights', null, monthNav(S.month, 'month'))}<div class="seg" role="group" aria-label="Show" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="inskind" data-v="expense" aria-pressed="${k === 'expense'}">Expenses</button><button data-act="inskind" data-v="income" aria-pressed="${k === 'income'}">Income</button></div>`;
+  let h = `<main>${hdr('Insights', null, monthNav(S.month, 'month'))}<div class="seg" role="group" aria-label="Show" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="inskind" data-v="expense" aria-pressed="${k === 'expense'}">Expenses</button><button data-act="inskind" data-v="income" aria-pressed="${k === 'income'}">Income</button><button data-act="inskind" data-v="net" aria-pressed="${k === 'net'}">Net</button></div>`;
   if(S.err.month) h += banner(S.err.month, true);
   if(!md) return h + `<div class="skel">Loading…</div></main>`;
+  if(k === 'net') return h + viewNet(md) + `</main>`;
   const total = Number(k === 'expense' ? md.spent : md.income); const prev = Number(k === 'expense' ? md.prev_spent : md.prev_income);
   const diff = total - prev; const rows = (k === 'expense' ? md.exp : md.inc) || [];
   h += `<section class="card" style="gap:4px"><span class="sm muted sb">${k === 'expense' ? 'Household spending' : 'Household income'} in ${esc(mLabel(S.month))}</span><span class="big" style="font-size:34px">${cad(total)}</span><span class="sm muted">${prev ? (diff === 0 ? 'Same as ' : (diff < 0 ? '▼ ' + cad(-diff) + ' less than ' : '▲ ' + cad(diff) + ' more than ')) + MONTHS_L[+addMonths(S.month, -1).slice(5, 7) - 1] + ' (' + cad(prev) + ')' : 'Nothing recorded the month before'}</span></section>`;
@@ -615,6 +663,38 @@ function viewInsights(){
   }
   return h + `</main>`;
 }
+
+/* ---- net: income minus spending ---- */
+function viewNet(md){
+  const inc = Number(md.income), sp = Number(md.spent), net = inc - sp;
+  let h = `<section class="card" style="gap:6px"><span class="sm muted sb">Income minus spending in ${esc(mLabel(S.month))}</span><span class="big" style="font-size:34px">${cadS(net)}</span>
+    <div class="row sp sm"><span>Income</span><span class="b">${cad(inc)}</span></div>
+    <div class="row sp sm"><span>Spent</span><span class="b">−${cad(sp)}</span></div>
+    <span class="sm ${net >= 0 ? 'pos' : 'neg'} sb">${inc > 0 ? (net >= 0 ? 'You kept ' + Math.round(net / inc * 100) + '% of what came in' : 'Spent ' + cad(-net) + ' more than came in') : (sp ? 'No income recorded this month' : 'Nothing recorded this month')}</span></section>`;
+  if(S.err.net) h += banner(S.err.net, true);
+  const rows = S.net;
+  if(!rows){ if(!S.busy.net && !S.err.net) setTimeout(loadNet); return h + `<div class="skel">Loading the last 12 months…</div>`; }
+  const nets = rows.map(r => Number(r.income) - Number(r.spent));
+  const maxP = Math.max(0, ...nets), maxN = Math.max(0, ...nets.map(v => -v));
+  const H = 190, pad = 22, scale = (H - 2 * pad) / ((maxP + maxN) || 1), zero = pad + maxP * scale;
+  const tot = rows.reduce((a, r) => ({i: a.i + Number(r.income), s: a.s + Number(r.spent)}), {i: 0, s: 0});
+  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Income minus spending, last 12 months"><div class="row sp" style="padding:0 16px"><span class="sm b">Last 12 months</span><span class="xs muted">tap a month</span></div>
+    <div class="row xs muted" style="padding:0 16px;gap:14px"><span><i class="key" style="background:var(--gain)"></i>Kept (income above spending)</span><span><i class="key" style="background:var(--loss)"></i>Overspent</span></div>
+    <div class="chart"><div class="in" style="width:${rows.length * 52 + 16}px"><div class="nplot"><div class="nzero" style="top:${zero}px"></div>` +
+    rows.map((r, i) => {
+      const v = nets[i], hgt = Math.max(v ? 2 : 0, Math.round(Math.abs(v) * scale)), sel = r.m === S.month;
+      const bar = v >= 0 ? `<i class="g" style="top:${zero - hgt}px;height:${hgt}px"></i><span style="top:${zero - hgt - 15}px">${v ? '+' + short$(v) : '$0'}</span>`
+        : `<i class="l" style="top:${zero}px;height:${hgt}px"></i><span style="top:${zero + hgt + 3}px">−${short$(v)}</span>`;
+      return `<button class="ncol" data-act="netsel" data-m="${r.m}" aria-pressed="${sel}" aria-label="${esc(mLabel(r.m))}: income ${cad(r.income)}, spent ${cad(r.spent)}, net ${cadS(v)}">${bar}</button>`;
+    }).join('') +
+    `</div><div class="mlab">${rows.map((r, i) => `<div class="${r.m === S.month ? 'on' : ''}">${mShort(r.m)}<small>${i === 0 || r.m.slice(5, 7) === '01' ? r.m.slice(0, 4) : ''}</small></div>`).join('')}</div></div></div>
+    <div class="row sp sm" style="padding:0 16px"><span class="muted">12 months: ${cad0(tot.i)} in, ${cad0(tot.s)} out</span><span class="b" style="white-space:nowrap">${tot.i - tot.s >= 0 ? '+' : '−'}${cad0(Math.abs(tot.i - tot.s))}</span></div></section>`;
+  h += `<section class="card tight"><table class="ntable"><caption class="sm b" style="text-align:left;padding:10px 0 4px">Month by month</caption><thead><tr><th scope="col">Month</th><th scope="col">Income</th><th scope="col">Spent</th><th scope="col">Net</th></tr></thead><tbody>` +
+    rows.slice().reverse().map(r => { const v = Number(r.income) - Number(r.spent); return `<tr class="${r.m === S.month ? 'on' : ''}"><td>${mShort(r.m)} ${r.m.slice(0, 4)}</td><td>${cad0(r.income)}</td><td>${cad0(r.spent)}</td><td class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${cad0(Math.abs(v))}</td></tr>`; }).join('') +
+    `</tbody></table></section>`;
+  return h;
+}
+const loadNet = () => load('net', async () => { S.netScrolled = false; S.net = await api('app_net', {end: monthOf(todayISO())}); });
 
 /* ---- category history ---- */
 function viewCat(){
@@ -863,6 +943,14 @@ async function removeBudget(){
   } catch(err){ S.busy.budget = false; S.err.budget = errText(err); render(); }
 }
 
+async function setNetWorth(ids, on){
+  delete S.err.nw;
+  const prev = {}; B().accounts.forEach(a => { if(ids.includes(a.id)){ prev[a.id] = a.nw; a.nw = on; } });
+  render();
+  try { await api('app_set_net_worth', {ids, on}, true); }
+  catch(e){ B().accounts.forEach(a => { if(a.id in prev) a.nw = prev[a.id]; }); S.err.nw = 'Not saved. ' + errText(e); render(); }
+}
+
 /* ---- screenshot import ---- */
 function startImport(){
   S.imp = {step: 'pick', acct: store('impAcct') || '', files: [], rows: [], error: null, ctl: null};
@@ -1000,7 +1088,10 @@ document.addEventListener('click', e => {
     case 'month': setMonth(addMonths(S.month, +el.dataset.d)); break;
     case 'owner': S.owner = el.dataset.v; render(); break;
     case 'hidden': S.showHidden = !S.showHidden; render(); break;
+    case 'countall': S.countAll = !S.countAll; store('countAll', S.countAll); render(); break;
+    case 'nwedit': S.nwEdit = !S.nwEdit; delete S.err.nw; render(); break;
     case 'inskind': S.insKind = el.dataset.v; render(); break;
+    case 'netsel': setMonth(el.dataset.m); break;
     case 'cat': if(el.dataset.cid) openCat(el.dataset.cid, el.dataset.k); break;
     case 'catsw': S.cat.cid = el.dataset.cid; S.cat.rows = null; S.cat.tx = null; S.cat.scrolled = false; render(); loadCat(); break;
     case 'catsel': S.cat.sel = el.dataset.m; S.cat.tx = null; render(); loadCatTx(); if(!S.monthData[S.cat.sel]) loadMonth(S.cat.sel); break;
@@ -1046,6 +1137,12 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target; const id = t.id || '';
+  if(t.dataset.nw){ setNetWorth([t.dataset.nw], t.checked); return; }
+  if(t.dataset.nwgroup){
+    const g = GROUPS.find(x => x.key === t.dataset.nwgroup);
+    const ids = B().accounts.filter(a => a.active && g.types.includes(a.type) && (S.owner === 'all' || ownerKey(a) === S.owner)).map(a => a.id);
+    setNetWorth(ids, t.checked); return;
+  }
   if(id === 'txacct'){ S.txAcct = t.value; S.txns = null; render(); loadTxns(); }
   else if(id === 'add-acct'){ S.add.acct = t.value; if(S.add.to === t.value) S.add.to = ''; render(); }
   else if(id === 'add-to'){ S.add.to = t.value; }
@@ -1061,7 +1158,7 @@ document.addEventListener('change', e => {
 
 /* ---------- boot ---------- */
 async function boot(){
-  S.month = monthOf(todayISO()); S.txMonth = S.month;
+  S.month = monthOf(todayISO()); S.txMonth = S.month; S.countAll = !!store('countAll');
   render();
   if(!window.claude || !window.claude.use) return bootWeb();
   const [mcp, sample] = await Promise.all(['mcp', 'sample'].map(n => window.claude.use(n).catch(() => null)));
