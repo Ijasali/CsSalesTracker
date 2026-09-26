@@ -164,6 +164,22 @@ nav.tabs .add{width:52px;height:52px;border-radius:26px;background:var(--ink);co
 .ntable th:first-child,.ntable td:first-child{text-align:left}
 .ntable td{text-align:right;padding:8px 0;border-top:1px solid var(--line2);white-space:nowrap}
 .ntable tr.on td{font-weight:700}
+.bgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:4px 14px;align-items:center;padding:12px 0;border:0;border-top:1px solid var(--line2);background:none;width:100%;text-align:left;color:inherit;cursor:pointer}
+.bgrid:first-child{border-top:0}
+.bgrid .nm{font-size:13px;color:var(--muted);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bgrid .lim{font-size:16px;font-weight:700;white-space:nowrap}
+.bgrid .pc{font-size:12px;font-weight:700;color:var(--muted)} .bgrid .pc.over{color:var(--warn)}
+.bbar{position:relative;height:22px;border-radius:6px;background:var(--track)}
+.bbar>i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--gain)}
+.bbar>i.over{background:var(--loss)}
+.bbar>u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink2);border-radius:1px}
+.bnums{display:flex;justify-content:space-between;font-size:14px;font-weight:700;white-space:nowrap}
+.todaytag{position:relative;height:22px}
+.todaytag span{position:absolute;transform:translateX(-50%);font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--ink2);color:var(--ground);white-space:nowrap}
+.mrow{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:6px 0;border:0;border-top:1px solid var(--line2);background:none;text-align:left;color:inherit;cursor:pointer}
+.mrow:first-child{border-top:0}
+.mchip{width:52px;flex-shrink:0;text-align:center;padding:5px 0;border:1px solid var(--line);border-radius:8px;font-size:13px;font-weight:700;color:var(--muted)}
+.mchip.now{border-color:var(--accent);color:var(--accent)}
 @media (prefers-reduced-motion:no-preference){.chart{scroll-behavior:smooth}}
 </style>
 
@@ -198,7 +214,7 @@ const S = {
   view: 'home', stack: [], mcp: null, sample: null, imgOK: false, web: false, sb: null, user: null, login: null, unlinked: false, pending: null,
   boot: null, month: null, monthData: {}, recent: null, txns: null, cat: null,
   owner: 'all', showHidden: false, insKind: 'expense', txq: '', txKind: 'all', txAcct: '', txMonth: null,
-  err: {}, busy: {}, sheet: null, toast: null, add: null, imp: null, budgetEdit: null
+  err: {}, busy: {}, sheet: null, toast: null, add: null, imp: null, budgetEdit: null, by: null, bedit: null
 };
 
 /* ---------- small helpers ---------- */
@@ -252,7 +268,7 @@ const ICON = {
   alert:'<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',
   search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   camera:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
-  pen:'<path d="M4 20h4L19 9l-4-4L4 16z"/>', user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  pen:'<path d="M4 20h4L19 9l-4-4L4 16z"/>', trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   eyeoff:'<path d="M10.6 5.1A10.5 10.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.6 3.6M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.8 9.8 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>', refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>'
 };
@@ -402,7 +418,7 @@ function render(){
   else if(S.web && !S.user) body = viewLogin();
   else if(S.unlinked) body = viewUnlinked();
   else if(!S.boot) body = S.err.boot ? `<main>${hdr('Zasvia Finance')}${banner(S.err.boot, true)}<div class="row wrap"><button class="btn" data-act="reload">${svg('refresh', 18)} Try again</button>${S.web ? '<button class="btn" data-act="signout">Sign out</button>' : ''}</div></main>` : `<main>${hdr('Zasvia Finance')}<div class="skel">Loading your accounts…</div></main>`;
-  else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport})[S.view](); }
+  else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport, budlist: viewBudList, budyear: viewBudYear})[S.view](); }
   root.innerHTML = body + (app ? tabs() : '') + (S.sheet ? sheet() : '') + (S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : '');
   if(focus){ const el = document.getElementById(focus.id); if(el){ el.focus(); try { if(focus.s != null) el.setSelectionRange(focus.s, focus.s); } catch(e){} } }
   const ch = $('.chart');
@@ -735,42 +751,75 @@ function viewCat(){
   return h + `</main>`;
 }
 
-/* ---- budgets ---- */
+/* ---- budgets: spent against budget, like the previous app ---- */
+function todayPct(m){
+  const t = todayISO(); if(monthOf(t) !== m) return null;
+  const days = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate();
+  return (+t.slice(8, 10) - 0.5) / days * 100;
+}
+function budgetBar(spent, limit, tp){
+  const pct = limit ? spent / limit * 100 : 0; const over = spent > limit;
+  return `<div class="bbar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100" aria-label="${Math.round(pct)}% of budget used"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, pct).toFixed(1)}%"></i>${tp != null ? `<u style="left:calc(${tp.toFixed(1)}% - 1px)" aria-hidden="true"></u>` : ''}</div>`;
+}
 function viewBudgets(){
   const md = S.monthData[S.month];
   let h = `<main>${hdr('Budgets', null, monthNav(S.month, 'month'))}`;
   if(S.err.month) h += banner(S.err.month, true);
-  if(S.err.budget) h += banner(S.err.budget, true);
-  if(!md) return h + `<div class="skel">Loading…</div></main>`;
-  const bs = budgetSummary(md); const spent = {}; (md.exp || []).forEach(x => { spent[x.cid] = Number(x.amt); });
-  const avg = {}; (md.avg3 || []).forEach(x => { avg[x.cid] = Number(x.amt); });
-  const bud = {}; (md.budgets || []).forEach(b => { bud[b.cid] = Number(b.amount); });
-  if(bs){
-    const pct = bs.limit ? Math.round(bs.spent / bs.limit * 100) : 0; const dl = daysLeft(S.month); const left = bs.limit - bs.spent;
-    h += `<section class="hero"><span class="lbl">Spent in budgeted categories, of ${cad(bs.limit)}</span><span class="big">${cad(bs.spent)}</span><div class="bar lg"><i class="${pct > 100 ? 'over' : ''}" style="width:${Math.min(pct, 100)}%"></i></div>
-      <div class="tiles" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="tile" style="cursor:default"><span class="k">${left >= 0 ? 'Left to spend' : 'Over budget'}</span><span class="v${left < 0 ? ' owed' : ''}">${cad(Math.abs(left))}</span></div><div class="tile" style="cursor:default"><span class="k">${dl ? 'Safe per day' : 'Days left'}</span><span class="v">${dl ? cad(Math.max(0, left) / dl) : '0'}</span></div></div></section>`;
-  } else h += banner('Set a monthly limit for any category. A limit carries forward to later months until you change it.');
-  const tops = B().cats.filter(c => !c.pid && c.kind === 'expense');
-  const withB = tops.filter(c => bud[c.id] != null).sort((a, b) => (spent[b.id] || 0) - (spent[a.id] || 0));
-  const without = tops.filter(c => bud[c.id] == null && (spent[c.id] || avg[c.id])).sort((a, b) => ((spent[b.id] || 0) + (avg[b.id] || 0)) - ((spent[a.id] || 0) + (avg[a.id] || 0)));
-  const row = (c, has) => {
-    const s = spent[c.id] || 0; const lim = bud[c.id]; const editing = S.budgetEdit && S.budgetEdit.cid === c.id;
-    let r = `<div class="review" style="gap:6px">`;
-    if(has){
-      const pct = lim ? Math.round(s / lim * 100) : 0; const over = s > lim;
-      r += `<button data-act="budedit" data-cid="${c.id}" style="border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;gap:6px;cursor:pointer;color:inherit"><span class="row" style="gap:8px;width:100%"><span class="b grow">${esc(c.name)}</span><span class="b">${cad(s)}</span><span class="xs muted">/ ${cad(lim)}</span></span><span class="bar" style="width:100%"><i class="${over ? 'over' : ''}" style="width:${Math.min(pct, 100)}%"></i></span><span class="row sp xs" style="width:100%">${over ? `<span class="neg b row" style="gap:4px">${svg('alert', 14)}${cad(s - lim)} over</span>` : `<span class="sb" style="color:var(--ink2)">${cad(lim - s)} left</span>`}<span class="muted">${pct}%</span></span></button>`;
-    } else {
-      r += `<div class="row" style="gap:8px"><span class="b grow">${esc(c.name)}</span><span class="sm">${cad(s)} this month</span></div><div class="row sp xs muted"><span>3-month average ${cad(avg[c.id] || 0)}</span><button class="link" data-act="budedit" data-cid="${c.id}">Set budget</button></div>`;
-    }
-    if(editing){
-      r += `<form class="row" data-form="budget" style="gap:8px"><label class="grow"><span class="xs muted b">Monthly limit</span><input id="bud-amt" class="inp" inputmode="decimal" value="${esc(S.budgetEdit.v)}" aria-label="Monthly limit for ${esc(c.name)}"></label><button class="btn accent" type="submit" style="align-self:flex-end"${S.busy.budget ? ' disabled' : ''}>Save</button><button class="btn" type="button" data-act="budcancel" style="align-self:flex-end">Cancel</button></form>`;
-      if(has) r += `<button class="link" data-act="budremove" style="align-self:flex-start;color:var(--warn)">Remove this budget from ${esc(mLabel(S.month))} on</button>`;
-    }
-    return r + `</div>`;
-  };
-  if(withB.length) h += `<section class="card tight"><div class="row sp" style="padding-top:10px"><h2>Budgeted</h2><span class="xs muted">tap to change</span></div><div class="list">${withB.map(c => row(c, true)).join('')}</div></section>`;
-  if(without.length) h += `<section class="card tight"><div class="row sp" style="padding-top:10px"><h2>No budget yet</h2></div><div class="list">${without.map(c => row(c, false)).join('')}</div></section>`;
+  if(!md){ if(!S.busy.month) setTimeout(() => loadMonth(S.month)); return h + `<div class="skel">Loading…</div></main>`; }
+  const spent = {}; (md.exp || []).forEach(x => { spent[x.cid] = Number(x.amt); });
+  const bud = (md.budgets || []).map(b => ({cid: b.cid, lim: Number(b.amount), s: spent[b.cid] || 0, only: b.is_month})).filter(b => cat(b.cid))
+    .sort((a, b) => b.lim - a.lim);
+  const tp = todayPct(S.month);
+  const total = bud.reduce((t, b) => t + b.lim, 0), used = bud.reduce((t, b) => t + b.s, 0), left = total - used;
+  h += `<section class="card" style="gap:4px"><div class="row sp" style="align-items:flex-start"><div style="display:flex;flex-direction:column;gap:2px"><span class="sm muted sb">${left >= 0 ? 'Remaining' : 'Over budget'} in ${esc(MONTHS_L[+S.month.slice(5, 7) - 1])}</span><span class="big" style="font-size:34px">${cad(Math.abs(left))}</span></div>
+    <button class="btn" data-act="budlist" style="min-height:40px;white-space:nowrap;padding:0 12px;font-size:13px">Budget setting ${svg('right', 14)}</button></div>`;
+  if(!bud.length){
+    h += `<span class="sm muted">No budgets for this month. Tap Budget setting to give categories a monthly budget.</span></section></main>`;
+    return h;
+  }
+  const dl = daysLeft(S.month);
+  h += `<span class="sm muted">${dl && left > 0 ? 'About ' + cad(left / dl) + ' a day for the ' + dl + ' day' + (dl > 1 ? 's' : '') + ' left' : (dl ? '' : 'Month finished')}</span></section>`;
+  h += `<section class="card tight"><div class="list">`;
+  h += `<div class="bgrid" style="cursor:default"><span></span>${tp != null ? `<div class="todaytag"><span style="left:${tp.toFixed(1)}%">Today</span></div>` : '<span></span>'}
+    <div><div class="nm">Monthly</div><div class="lim">${cad(total)}</div><div class="pc${used > total ? ' over' : ''}">${total ? Math.round(used / total * 100) : 0}% used</div></div><div style="display:flex;flex-direction:column;gap:4px">${budgetBar(used, total, tp)}<div class="bnums"><span>${cad(used)}</span><span class="${left < 0 ? 'neg' : ''}">${left < 0 ? '−' : ''}${cad(Math.abs(left))}</span></div></div></div>`;
+  h += bud.map(b => { const l = b.lim - b.s; return `<button class="bgrid" data-act="budyear" data-cid="${b.cid}" aria-label="${esc(topName(b.cid))}: spent ${cad(b.s)} of ${cad(b.lim)}"><div><div class="nm">${esc(topName(b.cid))}</div><div class="lim">${cad(b.lim)}</div><div class="pc${b.s > b.lim ? ' over' : ''}">${Math.round(b.s / b.lim * 100)}% used${b.only ? ' · this month only' : ''}</div></div><div style="display:flex;flex-direction:column;gap:4px">${budgetBar(b.s, b.lim, tp)}<div class="bnums"><span>${cad(b.s)}</span><span class="${l < 0 ? 'neg' : ''}">${l < 0 ? '−' : ''}${cad(Math.abs(l))}</span></div></div></button>`; }).join('');
+  h += `</div></section><span class="xs muted">Under each bar: spent on the left, left to spend on the right.${tp != null ? ' The line marks today.' : ''}</span>`;
+  const without = B().cats.filter(c => !c.pid && c.kind === 'expense' && spent[c.id] && !bud.find(b => b.cid === c.id)).sort((a, b) => spent[b.id] - spent[a.id]);
+  if(without.length) h += `<section class="card tight"><div class="row sp" style="padding-top:10px"><h2>Spending with no budget</h2></div><div class="list">${without.map(c => `<button class="mrow" data-act="budyear" data-cid="${c.id}"><span class="grow sb">${esc(c.name)}</span><span class="sm">${cad(spent[c.id])}</span><span class="link">Set</span></button>`).join('')}</div></section>`;
   return h + `</main>`;
+}
+
+/* ---- budget setting: every category's default ---- */
+function viewBudList(){
+  const md = S.monthData[monthOf(todayISO())];
+  const cur = {}; ((md && md.budgets) || []).forEach(b => { cur[b.cid] = Number(b.amount); });
+  const tops = B().cats.filter(c => !c.pid && c.kind === 'expense').sort((a, b) => ((cur[b.id] ? 1 : 0) - (cur[a.id] ? 1 : 0)) || a.name.localeCompare(b.name));
+  let h = `<main>${hdr('Budget setting', null, null, true)}<span class="sm muted">Tap a category to set its monthly budget for the year and change any single month.</span>`;
+  if(!md){ if(!S.busy.month) setTimeout(() => loadMonth(monthOf(todayISO()))); }
+  h += `<section class="card tight"><div class="list">${tops.map(c => `<button class="mrow" data-act="budyear" data-cid="${c.id}"><span class="grow sb">${esc(c.name)}</span><span class="${cur[c.id] ? 'b' : 'sm muted'}">${cur[c.id] ? cad(cur[c.id]) : 'No budget'}</span><span class="muted" aria-hidden="true">›</span></button>`).join('')}</div></section>`;
+  return h + `</main>`;
+}
+
+/* ---- one category's budget for a year ---- */
+function viewBudYear(){
+  const by = S.by; const name = topName(by.cid); const d = by.data; const now = monthOf(todayISO());
+  let h = `<main>${hdr(name, 'Budget setting', `<button class="icon-btn" data-act="budrmask" aria-label="Remove this budget">${svg('trash', 18)}</button>`, true)}`;
+  h += `<div class="row sp"><button class="icon-btn" data-act="budyr" data-d="-1" aria-label="Previous year">${svg('left', 18)}</button><span class="b">${by.year}</span><button class="icon-btn" data-act="budyr" data-d="1" aria-label="Next year">${svg('right', 18)}</button></div>`;
+  h += `<span class="sm muted">The default budget applies from ${esc(mLabel(now))} on, until you change it. Tap a month to give it its own amount; other months keep the default.</span>`;
+  if(by.confirmRemove) h += `<div class="card" style="gap:10px"><span class="sm b">Stop budgeting ${esc(name)} from ${esc(mLabel(now))} on? Earlier months keep their budgets.</span><div class="row"><button class="btn danger" data-act="budrmdo"${S.busy.budget ? ' disabled' : ''}>Remove</button><button class="btn" data-act="budrmno">Keep it</button></div></div>`;
+  if(S.err.budget) h += banner(S.err.budget, true);
+  if(!d) return h + `<div class="skel">Loading…</div></main>`;
+  const ed = S.bedit;
+  const form = (key, label, extra) => `<form data-form="bud" style="display:flex;flex-direction:column;gap:8px;padding:4px 0 12px"><label for="bud-amt" class="xs muted b">${label}</label><div class="row" style="gap:8px"><input id="bud-amt" class="inp grow" inputmode="decimal" value="${esc(ed.v)}" autocomplete="off"><button class="btn accent" type="submit"${S.busy.budget ? ' disabled' : ''}>Save</button><button class="btn" type="button" data-act="budcancel">Cancel</button></div>${extra || ''}</form>`;
+  h += `<section class="card tight"><div class="list"><button class="mrow" data-act="budedit" data-k="default"><span class="grow b" style="font-size:16px">Default budget</span><span class="b" style="font-size:16px">${d.default != null && Number(d.default) > 0 ? cad(d.default) : 'Not set'}</span></button>`;
+  if(ed && ed.k === 'default') h += form('default', 'Monthly budget from ' + mLabel(now) + ' on');
+  h += `</div></section><section class="card tight"><div class="list">`;
+  for(const r of d.months.slice().reverse()){
+    const amt = r.amount == null ? 0 : Number(r.amount);
+    h += `<button class="mrow" data-act="budedit" data-k="${r.m}"><span class="mchip${r.m === now ? ' now' : ''}">${mShort(r.m)}</span><span class="grow xs muted">${[Number(r.spent) || r.m <= now ? 'spent ' + cad(r.spent) : '', r.is_month ? 'this month only' : ''].filter(Boolean).join(' · ')}</span><span class="b">${cad(amt)}</span></button>`;
+    if(ed && ed.k === r.m) h += form(r.m, 'Budget for ' + mLabel(r.m) + ' only', r.is_month ? `<button class="link" data-act="budclear" data-m="${r.m}" style="align-self:flex-start">Use the default for ${esc(mLabel(r.m))}</button>` : '');
+  }
+  return h + `</div></section></main>`;
 }
 
 /* ---- transactions ---- */
@@ -928,23 +977,34 @@ function afterWrite(){
   if(S.view === 'txns') loadTxns();
   if(S.view === 'cat') loadCat();
 }
-async function saveBudget(){
-  const e = S.budgetEdit; delete S.err.budget;
-  try {
-    const v = Number(String(e.v).replace(/[$,\s]/g, ''));
-    if(!isFinite(v) || v < 0) throw {code: 'bad_input', message: 'Enter the monthly limit as a number.'};
-    S.busy.budget = true; render();
-    await api('app_set_budget', {cid: e.cid, month: S.month, amount: v}, true);
-    S.busy.budget = false; S.budgetEdit = null; delete S.monthData[S.month]; await loadMonth(S.month); toast('Budget saved');
-  } catch(err){ S.busy.budget = false; S.err.budget = errText(err); render(); }
+function openBudYear(cid){
+  S.by = {cid, year: +S.month.slice(0, 4), data: null, confirmRemove: false}; S.bedit = null; delete S.err.budget;
+  go('budyear', true); loadBudYear();
 }
-async function removeBudget(){
-  const e = S.budgetEdit;
+const loadBudYear = () => load('budget', async () => { const by = S.by; by.data = await api('app_budget_year', {cid: by.cid, year: by.year, today: todayISO()}); });
+async function budgetChanged(msg){
+  S.bedit = null; S.monthData = {};
+  await loadBudYear(); loadMonth(S.month); if(S.month !== monthOf(todayISO())) loadMonth(monthOf(todayISO()));
+  toast(msg);
+}
+async function saveBud(){
+  const ed = S.bedit; delete S.err.budget;
   try {
+    const v = Number(String(ed.v).replace(/[$,\s]/g, ''));
+    if(String(ed.v).trim() === '' || !isFinite(v) || v < 0) throw {code: 'bad_input', message: 'Enter the budget as a number.'};
     S.busy.budget = true; render();
-    await api('app_remove_budget', {cid: e.cid, month: S.month}, true);
-    S.busy.budget = false; S.budgetEdit = null; S.monthData = {}; await loadMonth(S.month); toast('Budget removed');
-  } catch(err){ S.busy.budget = false; S.err.budget = errText(err); render(); }
+    const isDef = ed.k === 'default';
+    await api('app_set_budget', {cid: S.by.cid, month: isDef ? monthOf(todayISO()) : ed.k, amount: v, scope: isDef ? 'default' : 'month'}, true);
+    S.busy.budget = false; await budgetChanged(isDef ? 'Default budget saved' : 'Saved for ' + mLabel(ed.k));
+  } catch(e){ S.busy.budget = false; S.err.budget = errText(e); render(); }
+}
+async function clearBudMonth(m){
+  try { S.busy.budget = true; render(); await api('app_clear_budget_month', {cid: S.by.cid, month: m}, true); S.busy.budget = false; await budgetChanged(mLabel(m) + ' uses the default again'); }
+  catch(e){ S.busy.budget = false; S.err.budget = errText(e); render(); }
+}
+async function removeBud(){
+  try { S.busy.budget = true; render(); await api('app_remove_budget', {cid: S.by.cid, month: monthOf(todayISO())}, true); S.busy.budget = false; S.by.confirmRemove = false; await budgetChanged('Budget removed'); }
+  catch(e){ S.busy.budget = false; S.err.budget = errText(e); render(); }
 }
 
 async function setNetWorth(ids, on){
@@ -1114,9 +1174,23 @@ document.addEventListener('click', e => {
     case 'openadd': startAdd(); break;
     case 'openimp': startImport(); break;
     case 'addkind': S.add.kind = el.dataset.v; S.add.cat = ''; render(); break;
-    case 'budedit': { const md = S.monthData[S.month] || {}; const b = (md.budgets || []).find(x => x.cid === el.dataset.cid); const avg = (md.avg3 || []).find(x => x.cid === el.dataset.cid); S.budgetEdit = {cid: el.dataset.cid, v: b ? String(Number(b.amount)) : (avg ? String(Math.round(Number(avg.amt))) : '')}; render(); const i = $('#bud-amt'); if(i) i.focus(); break; }
-    case 'budcancel': S.budgetEdit = null; render(); break;
-    case 'budremove': removeBudget(); break;
+    case 'budlist': go('budlist', true); break;
+    case 'budyear': openBudYear(el.dataset.cid); break;
+    case 'budyr': S.by.year += +el.dataset.d; S.by.data = null; S.bedit = null; render(); loadBudYear(); break;
+    case 'budedit': {
+      const k = el.dataset.k; const d = S.by.data; if(!d) break;
+      if(S.bedit && S.bedit.k === k){ S.bedit = null; render(); break; }
+      const r = k === 'default' ? null : d.months.find(x => x.m === k);
+      const cur = k === 'default' ? d.default : (r && r.amount);
+      S.bedit = {k, v: cur != null && Number(cur) > 0 ? String(Number(cur)) : ''}; render();
+      const i = $('#bud-amt'); if(i){ i.focus(); i.select(); }
+      break;
+    }
+    case 'budcancel': S.bedit = null; render(); break;
+    case 'budclear': clearBudMonth(el.dataset.m); break;
+    case 'budrmask': S.by.confirmRemove = true; render(); break;
+    case 'budrmno': S.by.confirmRemove = false; render(); break;
+    case 'budrmdo': removeBud(); break;
     case 'impread': readScreens(); break;
     case 'impstop': if(S.imp.ctl) S.imp.ctl.abort(); break;
     case 'impsave': saveImport(); break;
@@ -1127,7 +1201,7 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target.dataset.form;
-  if(f === 'login') doLogin(); else if(f === 'add') saveAdd(); else if(f === 'edit') saveEdit(); else if(f === 'budget') saveBudget();
+  if(f === 'login') doLogin(); else if(f === 'add') saveAdd(); else if(f === 'edit') saveEdit(); else if(f === 'bud') saveBud();
 });
 let searchT;
 document.addEventListener('input', e => {
@@ -1137,7 +1211,7 @@ document.addEventListener('input', e => {
   if(id === 'txq'){ S.txq = t.value; clearTimeout(searchT); searchT = setTimeout(() => { S.txns = null; render(); loadTxns(); }, 450); return; }
   if(id.startsWith('add-') && S.add){ const k = {'add-amt':'amt','add-date':'date','add-payee':'payee','add-note':'note'}[id]; if(k) S.add[k] = t.value; return; }
   if(id.startsWith('ed-') && S.sheet){ const k = {'ed-payee':'payee','ed-note':'note'}[id]; if(k) S.sheet[k] = t.value; return; }
-  if(id === 'bud-amt' && S.budgetEdit){ S.budgetEdit.v = t.value; }
+  if(id === 'bud-amt' && S.bedit){ S.bedit.v = t.value; }
 });
 document.addEventListener('change', e => {
   const t = e.target; const id = t.id || '';

@@ -21,6 +21,14 @@ from `include_in_totals`, which decides whether an account's income and spending
 Insights → Net shows income minus spending for the month and for each of the last 12 months
 (`app_net`).
 
+### Budgets
+
+As in the previous app, each category has a default monthly budget that applies from the month it
+is set until it is changed (`budgets.scope = 'default'`), and any single month can have its own
+amount (`scope = 'month'`). Budgets → Budget setting → a category shows its year: the default and
+each month's budget and spending. The Budgets screen shows each category's spending against its
+budget, what is left, and a marker for today.
+
 ### Who can get in
 
 A login becomes a household member in one of two ways: its email matches a member's `email`
