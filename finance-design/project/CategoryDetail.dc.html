@@ -14,7 +14,7 @@
 body{margin:0}
 </style>
 </helmet>
-<div style="width: 390px; height: 1220px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; padding: 20px 16px 24px; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A; font-variant-numeric: tabular-nums">
+<div style="width: 390px; height: 1240px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; padding: 20px 16px 24px; background: #F4F2ED; font-family: Manrope, system-ui, sans-serif; color: #15171A; font-variant-numeric: tabular-nums">
 
 <header style="display: flex; align-items: center; gap: 8px; min-height: 52px">
 <sc-if value="{{embedded}}" hint-placeholder-val="{{ false }}">
@@ -38,26 +38,35 @@ body{margin:0}
 <button onClick="{{next}}" disabled="{{atEnd}}" aria-label="Next month" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #E3E0D8; background: #FFFFFF; color: #15171A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
 </div>
 
-<section aria-label="Monthly spending, last 6 months" style="display: flex; flex-direction: column; gap: 10px; padding: 18px 16px 14px; border-radius: 20px; background: #FFFFFF">
-<div style="display: flex; justify-content: space-between; align-items: baseline">
-<span style="font-size: 13px; font-weight: 700">Last 6 months</span>
-<span style="font-size: 12px; color: #5B5F64">tap a month</span>
+<section aria-label="Monthly spending, last 12 months" style="display: flex; flex-direction: column; gap: 10px; padding: 18px 0 14px; border-radius: 20px; background: #FFFFFF; overflow: hidden">
+<div style="display: flex; justify-content: space-between; align-items: baseline; padding: 0 16px">
+<span style="font-size: 13px; font-weight: 700">Last 12 months</span>
+<span style="font-size: 12px; color: #5B5F64">swipe for earlier · tap a month</span>
 </div>
-<div style="position: relative; height: 180px; border-bottom: 1px solid #D9D5CC">
-<div style="{{avgLineStyle}}"><span style="position: absolute; right: 0; top: -18px; font-size: 11px; font-weight: 700; color: #5B5F64; background: #FFFFFF; padding: 0 4px">avg {{avg}}</span></div>
-<div style="position: absolute; inset: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; align-items: end">
-<sc-for list="{{bars}}" as="b" hint-placeholder-count="6">
-<button onClick="{{b.pick}}" aria-label="{{b.aria}}" aria-pressed="{{b.on}}" style="height: 180px; padding: 0; border: 0; background: transparent; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; cursor: pointer">
+<div ref="{{setScroller}}" style="overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch">
+<div style="{{innerStyle}}">
+<div style="position: relative; display: flex; align-items: flex-end; height: 180px; border-bottom: 1px solid #D9D5CC">
+<div style="{{avgLineStyle}}"></div>
+<sc-for list="{{bars}}" as="b" hint-placeholder-count="12">
+<button onClick="{{b.pick}}" aria-label="{{b.aria}}" aria-pressed="{{b.on}}" style="flex-shrink: 0; width: 52px; height: 180px; padding: 0 8px; box-sizing: border-box; border: 0; background: transparent; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; cursor: pointer">
 <span style="{{b.labelStyle}}">{{b.short}}</span>
 <span style="{{b.barStyle}}"></span>
 </button>
 </sc-for>
 </div>
-</div>
-<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px">
-<sc-for list="{{bars}}" as="b" hint-placeholder-count="6">
+<div style="display: flex; padding-top: 6px">
+<sc-for list="{{bars}}" as="b" hint-placeholder-count="12">
+<span style="flex-shrink: 0; width: 52px; display: flex; flex-direction: column; align-items: center; gap: 1px">
 <span style="{{b.monthStyle}}">{{b.month}}</span>
+<span style="font-size: 10px; font-weight: 700; color: #5B5F64; min-height: 13px">{{b.year}}</span>
+</span>
 </sc-for>
+</div>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; padding: 0 16px; font-size: 12px; color: #5B5F64">
+<span aria-hidden="true" style="width: 18px; border-top: 1.5px dashed #8C877C"></span>
+<span>12-month average {{avg}}</span>
 </div>
 </section>
 
@@ -72,7 +81,7 @@ body{margin:0}
 <span style="font-size: 11px; color: #5B5F64">{{deltaPct}}</span>
 </div>
 <div style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 16px; background: #FFFFFF">
-<span style="font-size: 11px; color: #5B5F64; font-weight: 700">vs 6-mo avg</span>
+<span style="font-size: 11px; color: #5B5F64; font-weight: 700">vs 12-mo avg</span>
 <span style="{{avgDeltaStyle}}">{{avgDelta}}</span>
 <span style="font-size: 11px; color: #5B5F64">avg {{avg}}</span>
 </div>
@@ -100,35 +109,50 @@ body{margin:0}
 
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"category":{"editor":"enum","options":["home","groceries","dining","transport","phone","shopping","health","fun","other"],"default":"home"},"onBack":{"editor":null},"$preview":{"width":390,"height":1220}}'>
+<script type="text/x-dc" data-dc-script data-props='{"category":{"editor":"enum","options":["home","groceries","dining","transport","phone","shopping","health","fun","other"],"default":"home"},"onBack":{"editor":null},"$preview":{"width":390,"height":1240}}'>
 class Component extends DCLogic {
 constructor(props) {
 super(props);
-this.state = { cat: props.category || 'home', m: 5 };
+this.state = { cat: props.category || 'home', m: 11 };
+this.col = 52;
+}
+componentDidMount() {
+this.scrollToMonth(false);
+}
+componentDidUpdate(prevProps, prevState) {
+if (prevState.m !== this.state.m || prevState.cat !== this.state.cat) this.scrollToMonth(true);
+}
+scrollToMonth(smooth) {
+var el = this.scroller;
+if (!el) return;
+var left = Math.max(0, this.state.m * this.col + this.col / 2 - el.clientWidth / 2);
+if (el.scrollTo) el.scrollTo({ left: left, behavior: smooth ? 'smooth' : 'auto' });
+else el.scrollLeft = left;
 }
 renderVals() {
 var cad = function (n) { return (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-var months = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
-var full = ['April', 'May', 'June', 'July', 'August', 'September'];
+var months = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+var full = ['October 2025', 'November 2025', 'December 2025', 'January 2026', 'February 2026', 'March 2026', 'April 2026', 'May 2026', 'June 2026', 'July 2026', 'August 2026', 'September 2026'];
+var last = months.length - 1;
 // Each subcategory: [name, September amount, fixed each month?]. Other months keep fixed items and scale the rest to the month's total.
 var DATA = {
-home: { name: 'Home expenses', budget: 4400, series: [4517.95, 4173.58, 4417.82, 4684.73, 4415.21, 4283.49],
+home: { name: 'Home expenses', budget: 4400, series: [4301.15, 4462.90, 4688.34, 4806.12, 4751.47, 4352.38, 4517.95, 4173.58, 4417.82, 4684.73, 4415.21, 4283.49],
 subs: [['Mortgage', 3280.92, 1], ['Property tax', 683.24, 1], ['Hydro One electricity', 149.65, 0], ['Home insurance', 120.99, 1], ['Enbridge gas', 48.69, 0], ['Internet', 0, 0], ['Water', 0, 0], ['Water heater', 0, 0]] },
-groceries: { name: 'Groceries', budget: 1200, series: [1084.20, 1152.75, 1098.60, 1211.35, 1176.90, 1126.40],
+groceries: { name: 'Groceries', budget: 1200, series: [1058.30, 1102.85, 1344.60, 1021.75, 1066.40, 1118.95, 1084.20, 1152.75, 1098.60, 1211.35, 1176.90, 1126.40],
 subs: [['Costco', 486.25, 0], ['No Frills', 402.30, 0], ['Farm Boy', 237.85, 0]] },
-dining: { name: 'Dining out', budget: 350, series: [298.40, 356.10, 402.75, 468.20, 385.60, 412.85],
+dining: { name: 'Dining out', budget: 350, series: [342.10, 310.55, 521.80, 244.35, 289.90, 318.60, 298.40, 356.10, 402.75, 468.20, 385.60, 412.85],
 subs: [['Restaurants', 268.40, 0], ['Takeout & delivery', 80.25, 0], ['Coffee', 64.20, 0]] },
-transport: { name: 'Transportation', budget: 750, series: [642.10, 705.85, 731.40, 812.95, 684.20, 698.30],
+transport: { name: 'Transportation', budget: 750, series: [668.45, 690.20, 702.15, 758.90, 741.30, 655.80, 642.10, 705.85, 731.40, 812.95, 684.20, 698.30],
 subs: [['Car insurance', 214.50, 1], ['Parking & maintenance', 201.50, 0], ['Fuel', 186.30, 0], ['Presto transit', 96.00, 1]] },
-phone: { name: 'Phone & subscriptions', budget: 200, series: [182.44, 182.44, 187.44, 187.44, 187.44, 187.44],
+phone: { name: 'Phone & subscriptions', budget: 200, series: [182.44, 182.44, 182.44, 182.44, 182.44, 182.44, 182.44, 182.44, 187.44, 187.44, 187.44, 187.44],
 subs: [['Mobile phones', 130.00, 1], ['Streaming & apps', 57.44, 0]] },
-shopping: { name: 'Shopping', budget: 400, series: [512.30, 288.45, 421.90, 604.15, 377.80, 356.20],
+shopping: { name: 'Shopping', budget: 400, series: [398.60, 684.25, 1120.40, 245.10, 310.75, 402.30, 512.30, 288.45, 421.90, 604.15, 377.80, 356.20],
 subs: [['Clothing', 164.80, 0], ['Household', 121.45, 0], ['Amazon', 69.95, 0]] },
-health: { name: 'Health & personal care', budget: 150, series: [146.20, 62.35, 118.90, 88.45, 132.10, 94.60],
+health: { name: 'Health & personal care', budget: 150, series: [104.25, 88.60, 141.30, 176.45, 92.10, 120.85, 146.20, 62.35, 118.90, 88.45, 132.10, 94.60],
 subs: [['Personal care', 52.45, 0], ['Pharmacy', 42.15, 0]] },
-fun: { name: 'Entertainment', budget: 150, series: [96.40, 142.80, 188.25, 214.60, 110.35, 128.75],
+fun: { name: 'Entertainment', budget: 150, series: [132.40, 98.75, 246.90, 72.30, 88.15, 104.60, 96.40, 142.80, 188.25, 214.60, 110.35, 128.75],
 subs: [['Movies & events', 76.50, 0], ['Hobbies', 52.25, 0]] },
-other: { name: 'Other', budget: 100, series: [45.00, 120.50, 38.75, 86.20, 54.30, 62.00],
+other: { name: 'Other', budget: 100, series: [58.20, 74.90, 312.50, 35.00, 42.75, 61.40, 45.00, 120.50, 38.75, 86.20, 54.30, 62.00],
 subs: [['Gifts', 40.00, 0], ['Miscellaneous', 22.00, 0]] }
 };
 var order = ['home', 'groceries', 'dining', 'transport', 'phone', 'shopping', 'health', 'fun', 'other'];
@@ -154,6 +178,8 @@ var prevDelta = m > 0 ? total - s[m - 1] : 0;
 var left = d.budget - total;
 
 return {
+setScroller: (el) => { this.scroller = el; if (el && !this.didInitScroll) { this.didInitScroll = true; setTimeout(() => this.scrollToMonth(false), 0); } },
+innerStyle: 'width: ' + (s.length * this.col + 16) + 'px; padding: 0 8px; box-sizing: border-box',
 embedded: !!this.props.onBack,
 standalone: !this.props.onBack,
 back: () => this.props.onBack && this.props.onBack(),
@@ -163,30 +189,30 @@ label: short[k], on: k === key,
 pick: () => this.setState({ cat: k }),
 style: 'flex-shrink: 0; min-height: 36px; padding: 0 14px; border-radius: 18px; font: 700 13px Manrope, sans-serif; ' + (k === key ? 'border: 1px solid #15171A; background: #15171A; color: #FFFFFF' : 'border: 1px solid #E3E0D8; background: #FFFFFF; color: #15171A')
 })),
-monthLabel: full[m] + ' 2026',
+monthLabel: full[m],
 monthShort: months[m],
-prevShort: m > 0 ? months[m - 1] : 'Mar',
-atStart: m === 0, atEnd: m === 5,
+prevShort: m > 0 ? months[m - 1] : 'Sep 2025',
+atStart: m === 0, atEnd: m === last,
 prev: () => this.setState({ m: Math.max(0, m - 1) }),
-next: () => this.setState({ m: Math.min(5, m + 1) }),
+next: () => this.setState({ m: Math.min(last, m + 1) }),
 bars: s.map((v, i) => ({
-month: months[i], on: i === m,
+month: months[i], year: i === 0 || months[i] === 'Jan' ? full[i].slice(-4) : '', on: i === m,
 short: '$' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : Math.round(v)),
-aria: full[i] + ' 2026: ' + cad(v),
+aria: full[i] + ': ' + cad(v),
 pick: () => this.setState({ m: i }),
 labelStyle: 'font-size: 11px; font-weight: 700; color: ' + (i === m ? '#15171A' : '#5B5F64'),
-barStyle: 'display: block; width: 100%; max-width: 36px; height: ' + Math.max(2, Math.round(v / max * plot)) + 'px; border-radius: 4px 4px 0 0; background: ' + (i === m ? '#16427F' : '#6E9AD6'),
+barStyle: 'display: block; width: 100%; height: ' + Math.max(2, Math.round(v / max * plot)) + 'px; border-radius: 4px 4px 0 0; background: ' + (i === m ? '#16427F' : '#6E9AD6'),
 monthStyle: 'text-align: center; font-size: 12px; ' + (i === m ? 'font-weight: 700; color: #15171A' : 'font-weight: 600; color: #5B5F64')
 })),
 avg: cad(avg),
-avgLineStyle: 'position: absolute; left: 0; right: 0; bottom: ' + Math.round(avg / max * plot) + 'px; border-top: 1.5px dashed #8C877C',
+avgLineStyle: 'position: absolute; left: 0; right: 0; pointer-events: none; bottom: ' + Math.round(avg / max * plot) + 'px; border-top: 1.5px dashed #8C877C',
 total: cad(total),
 delta: m > 0 ? sign(prevDelta) : '—',
 deltaPct: m > 0 ? (prevDelta >= 0 ? '+' : '−') + Math.abs(prevDelta / s[m - 1] * 100).toFixed(1) + '%' : 'no earlier data',
 deltaStyle: diffStyle(prevDelta),
 avgDelta: sign(total - avg),
 avgDeltaStyle: diffStyle(total - avg),
-isCurrent: m === 5,
+isCurrent: m === last,
 budget: cad(d.budget),
 budgetLeft: left >= 0 ? cad(left) + ' left' : cad(-left) + ' over',
 budgetStyle: 'font-weight: 700; color: ' + (left >= 0 ? '#1C7147' : '#8F3312'),
