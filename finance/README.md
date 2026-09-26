@@ -29,6 +29,14 @@ amount (`scope = 'month'`). Budgets → Budget setting → a category shows its 
 each month's budget and spending. The Budgets screen shows each category's spending against its
 budget, what is left, and a marker for today.
 
+### Weekly email
+
+Every Friday at 7:57 (Toronto) a scheduled Claude routine ("Weekly budget email") runs
+`app_weekly_email({today})`, which builds the whole email in the database (subject, HTML and plain
+text: the month against budget, categories over and within budget, the week's spending and biggest
+spends; never income), and sends it with Gmail to Ijas and Sherifa. The routine needs the Supabase
+and Gmail connectors attached (claude.ai → Routines).
+
 ### Who can get in
 
 A login becomes a household member in one of two ways: its email matches a member's `email`
