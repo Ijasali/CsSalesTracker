@@ -388,7 +388,13 @@ async function loadCat(){
   });
 }
 const loadCatTx = () => load('cat', async () => { S.cat.tx = (await api('app_cat_tx', {cid: S.cat.cid, m: S.cat.sel, kind: S.cat.kind})) || []; });
+// Reload when the app comes back into view after a while, so changes made on the other phone
+// (or by Claude) show up without pressing refresh.
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && S.boot && Date.now() - (S.loadedAt || 0) > 30000){ S.monthData = {}; refreshAll(); }
+});
 async function refreshAll(){
+  S.loadedAt = Date.now();
   S.net = null; delete S.err.net;
   await loadBoot();
   if(!S.boot) return;
@@ -634,7 +640,7 @@ function viewAccounts(){
   const ms = B().members; const own = S.owner;
   const opts = [['all', 'Everyone'], ...ms.map((m, i) => ['m' + i, m.name]), ...(hasJoint() ? [['joint', 'Joint']] : [])];
   const tot = totals(own);
-  let h = `<main>${hdr('Accounts')}<div class="seg" role="group" aria-label="Whose accounts" style="grid-template-columns:repeat(${opts.length},minmax(0,1fr))">${opts.map(o => `<button data-act="owner" data-v="${o[0]}" aria-pressed="${own === o[0]}">${esc(o[1])}</button>`).join('')}</div>
+  let h = `<main>${hdr('Accounts', null, `<button class="icon-btn" data-act="reload" aria-label="Refresh">${svg('refresh', 18)}</button>`)}<div class="seg" role="group" aria-label="Whose accounts" style="grid-template-columns:repeat(${opts.length},minmax(0,1fr))">${opts.map(o => `<button data-act="owner" data-v="${o[0]}" aria-pressed="${own === o[0]}">${esc(o[1])}</button>`).join('')}</div>
     <section class="hero" aria-label="Summary"><span class="lbl">${own === 'all' ? 'Household net worth' : (own === 'joint' ? 'Joint net worth' : esc(ms[+own.slice(1)].name) + '’s net worth')}</span><span class="big">${cad(tot.net)}</span>${nwNote(tot)}
     <div class="tiles"><div class="tile" style="cursor:default"><span class="k">Bank & cash</span><span class="v">${cad0(tot.bank)}</span></div><div class="tile" style="cursor:default"><span class="k">Investments</span><span class="v">${cad0(tot.inv)}</span></div><div class="tile" style="cursor:default"><span class="k">Owed</span><span class="v owed">${cad0(tot.owed)}</span></div></div></section>`;
   const accs = B().accounts.filter(a => own === 'all' || ownerKey(a) === own);
