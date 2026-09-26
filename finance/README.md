@@ -1,10 +1,37 @@
-# Household finance tracker: database and data entry
+# Household finance tracker: database, app and data entry
 
-The app is `app/index.html`, published as a private Claude artifact ("Manalody Money"). It reads and
-writes the `household-finance` Supabase project through the viewer's Supabase connector
-(`execute_sql`), so it only works when opened from claude.ai or the Claude app. Screenshots are read
-by Claude through the artifact's `sample` capability; the page then checks each row against the
-database (`make_fingerprint`, `find_possible_duplicates`, `match_category_rule`) before saving.
+The app is `app/index.html` ("Manalody Money"). The same page runs two ways:
+
+- **As a website** (GitHub Pages, any phone browser). Each person signs in with their own email and
+  password (Supabase Auth). The page calls one database function per screen or action
+  (`supabase/migrations/20260927000000_web_app_api.sql`, all named `app_*`) with the project's
+  publishable key; row level security limits every login to its own household. Screenshots are
+  read by the `read-screenshots` Edge Function (`supabase/functions/`), which calls the Claude API
+  with the project's `ANTHROPIC_API_KEY` secret.
+- **As a Claude artifact** (private, owner only). It calls the same functions through the viewer's
+  Supabase connector (`execute_sql`) and reads screenshots with the artifact's `sample` capability,
+  so it needs no API key.
+
+### Who can get in
+
+A login becomes a household member in one of two ways: its email matches a member's `email`
+(Ijas's is set), or a member approves it from Home → person button → Household ("This is
+Sherifa"). A login that is neither sees nothing. Everyone who is let in can see and change
+everything.
+
+### Setup (once)
+
+1. GitHub → repository Settings → Pages: deploy from branch `claude/finance-tracking-app-design-gfkmse`,
+   folder `/ (root)`. The app is then at `https://ijasali.github.io/CsSalesTracker/finance/app/`.
+2. Supabase → Authentication → Sign In / Providers → Email: turn off **Confirm email**. (Supabase's
+   built-in mailer only sends to the organisation's own team, so a confirmation email to anyone
+   else never arrives.)
+3. Supabase → Authentication → URL Configuration: set **Site URL** to the app's address.
+4. Both people create their logins; Ijas approves Sherifa's. Then turn off **Allow new users to
+   sign up** (Authentication → Sign In / Providers) so no one else can create a login.
+5. Optional, for reading screenshots on the website: Supabase → Edge Functions → Secrets, add
+   `ANTHROPIC_API_KEY` (from console.anthropic.com). Each batch of up to 5 screenshots costs about
+   5–10 cents with Claude Opus 5.
 
 The screens are designed in `../finance-design/`. This folder holds the Supabase database
 (`supabase/migrations/`) and how transactions get into it without typing each one.

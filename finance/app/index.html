@@ -1,5 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Manalody Money</title>
 <meta name="description" content="Household money app for Ijas and Sherifa: accounts, spending by category, budgets and transactions, read from the household-finance Supabase database.">
+<meta name="theme-color" content="#F4F2ED" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Money">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap">
@@ -128,13 +141,20 @@ nav.tabs .add{width:52px;height:52px;border-radius:26px;background:var(--ink);co
 @media (prefers-reduced-motion:no-preference){.chart{scroll-behavior:smooth}}
 </style>
 
+</head>
+<body>
 <div class="app" id="app"></div>
 
 <script>
 (function(){
 'use strict';
 
-const CFG = { server: 'Supabase', project: 'vncllvjcjbjwcsursmos', tz: 'America/Toronto' };
+const CFG = {
+  server: 'Supabase', project: 'vncllvjcjbjwcsursmos', tz: 'America/Toronto',
+  // The web version signs in to Supabase directly. The key is the project's publishable key,
+  // meant to be public: row level security decides what each login can see.
+  url: 'https://vncllvjcjbjwcsursmos.supabase.co', key: 'sb_publishable_CAYWmN8S51IKvwgIusqBnA_iU_NaaiR'
+};
 const LIAB = ['credit_card','line_of_credit','loan','mortgage'];
 const INVEST = ['tfsa','rrsp','fhsa','resp','gic','non_registered','crypto'];
 const GROUPS = [
@@ -148,7 +168,7 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const MONTHS_L = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const S = {
-  view: 'home', stack: [], mcp: null, sample: null, imgOK: false, noRuntime: false,
+  view: 'home', stack: [], mcp: null, sample: null, imgOK: false, web: false, sb: null, user: null, login: null, unlinked: false, pending: null,
   boot: null, month: null, monthData: {}, recent: null, txns: null, cat: null,
   owner: 'all', showHidden: false, insKind: 'expense', txq: '', txKind: 'all', txAcct: '', txMonth: null,
   err: {}, busy: {}, sheet: null, toast: null, add: null, imp: null, budgetEdit: null
@@ -205,7 +225,7 @@ const ICON = {
   alert:'<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',
   search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   camera:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
-  pen:'<path d="M4 20h4L19 9l-4-4L4 16z"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>', refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>'
+  pen:'<path d="M4 20h4L19 9l-4-4L4 16z"/>', user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>', refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>'
 };
 const svg = (n, s) => `<svg width="${s||20}" height="${s||20}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
 
@@ -248,80 +268,28 @@ function errText(e){
   if(c === 'blocked_by_policy' || c === 'approval_required') return 'Your organization’s settings block this Supabase call.';
   if(c === 'server_unavailable') return 'Supabase didn’t answer. If the project is paused, restore it in the Supabase dashboard, then try again.';
   if(c === 'bad_input') return e.message;
+  if(c === 'db') return webErr(e);
   if(c === 'tool_error') return 'Supabase refused the request: ' + String(e.message || '').replace(/^ERROR:\s*/, '').slice(0, 200);
   return (e && e.message) ? String(e.message).slice(0, 200) : 'Something went wrong. Try again.';
 }
+function webErr(e){
+  const m = String((e && e.message) || '');
+  if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Can’t reach the database. Check your connection. If the Supabase project is paused, restore it in the Supabase dashboard.';
+  if(/JWT|refresh token|not authenticated/i.test(m)) return 'Your sign-in expired. Sign out and sign in again.';
+  return m.slice(0, 200) || 'Something went wrong. Try again.';
+}
 function toast(msg){ S.toast = msg; render(); clearTimeout(toast.t); toast.t = setTimeout(() => { S.toast = null; render(); }, 3200); }
 
-/* ---------- data: queries ---------- */
-const ACCT_FILTER = `a.include_in_totals`;
-const Q_BOOT = `select json_build_object(
-  'hh', (select row_to_json(h) from (select id, name from households order by created_at limit 1) h),
-  'members', (select json_agg(m order by m.created_at) from (select id, display_name as name, created_at from household_members) m),
-  'accounts', (select json_agg(a order by a.name) from (select account_id as id, name, institution, type, owner_member_id as owner, include_in_totals as incl, is_active as active, round(balance, 2) as bal, round(contributed, 2) as contrib, last_txn from account_balances) a),
-  'cats', (select json_agg(c order by c.name) from (select id, parent_id as pid, name, kind from categories where not is_archived) c),
-  'review', (select count(*) from transactions where needs_review)
-) as data`;
-function qMonth(m){
-  const M = D(m);
-  return `with t as (
-    select t.*, coalesce(c.parent_id, c.id) as top_id from transactions t
-    join accounts a on a.id = t.account_id and ${ACCT_FILTER}
-    left join categories c on c.id = t.category_id
-    where t.txn_date >= ${M}::date and t.txn_date < (${M}::date + interval '1 month')
-  ), p as (
-    select t.* from transactions t join accounts a on a.id = t.account_id and ${ACCT_FILTER}
-    where t.txn_date >= (${M}::date - interval '1 month') and t.txn_date < ${M}::date
-  )
-  select json_build_object(
-    'income', coalesce((select sum(amount) from t where kind = 'income'), 0),
-    'spent', coalesce((select sum(-amount) from t where kind = 'expense'), 0),
-    'prev_spent', coalesce((select sum(-amount) from p where kind = 'expense'), 0),
-    'prev_income', coalesce((select sum(amount) from p where kind = 'income'), 0),
-    'invested', coalesce((select sum(t.amount) from t join accounts a on a.id = t.account_id where t.kind = 'transfer' and t.amount > 0 and a.type in ('tfsa','rrsp','fhsa','resp','gic','non_registered','crypto')), 0),
-    'exp', (select json_agg(x order by x.amt desc) from (select top_id as cid, sum(-amount) as amt, count(*) as n from t where kind = 'expense' group by top_id) x),
-    'inc', (select json_agg(x order by x.amt desc) from (select top_id as cid, sum(amount) as amt, count(*) as n from t where kind = 'income' group by top_id) x),
-    'accts', (select json_agg(x order by x.amt desc) from (select account_id as aid, sum(-amount) as amt from t where kind = 'expense' group by account_id) x),
-    'budgets', (select json_agg(b) from (select * from (select distinct on (category_id) category_id as cid, amount, month from budgets where month <= ${M}::date order by category_id, month desc) d where d.amount > 0) b),
-    'avg3', (select json_agg(x) from (select coalesce(c.parent_id, c.id) as cid, round(sum(-t.amount) / 3, 0) as amt from transactions t join accounts a on a.id = t.account_id and ${ACCT_FILTER} left join categories c on c.id = t.category_id where t.kind = 'expense' and t.txn_date >= (${M}::date - interval '3 month') and t.txn_date < ${M}::date group by 1) x)
-  ) as data`;
-}
-const TX_COLS = `t.id, t.txn_date as d, t.amount as amt, t.kind, t.category_id as cid, t.payee, t.description_raw as descr, t.note, t.account_id as aid, t.transfer_group_id as grp, t.source, t.needs_review as review,
-  (select t2.account_id from transactions t2 where t2.transfer_group_id = t.transfer_group_id and t2.id <> t.id limit 1) as other_aid`;
-const Q_RECENT = `select json_agg(x) as data from (select ${TX_COLS} from transactions t order by t.txn_date desc, t.created_at desc limit 6) x`;
-function qTxns(){
-  const w = [];
-  if(S.txq.trim()){
-    const q = lit('%' + S.txq.trim().replace(/[\\%_]/g, m => '\\' + m) + '%');
-    w.push(`(t.payee ilike ${q} or t.note ilike ${q} or t.description_raw ilike ${q} or exists (select 1 from categories c where c.id = t.category_id and c.name ilike ${q}))`);
-  } else {
-    const M = D(S.txMonth);
-    w.push(`t.txn_date >= ${M}::date and t.txn_date < (${M}::date + interval '1 month')`);
+/* ---------- data: one database function per screen or action ---------- */
+// On the web the app calls them through Supabase as the signed-in person; inside Claude it runs
+// `select public.app_x(...)` through the viewer's Supabase connector.
+async function api(name, p, write){
+  if(S.web){
+    const {data, error} = await S.sb.rpc(name, p === undefined ? undefined : {p});
+    if(error) throw {code: 'db', message: error.message, status: error.code};
+    return data;
   }
-  if(S.txKind !== 'all') w.push(`t.kind = ${lit(S.txKind)}`);
-  if(S.txAcct) w.push(`t.account_id = ${U(S.txAcct)}`);
-  if(S.txReview) w.push(`t.needs_review`);
-  return `select json_agg(x) as data from (select ${TX_COLS} from transactions t where ${w.join(' and ')} order by t.txn_date desc, t.created_at desc limit 400) x`;
-}
-function qCat(cid, endMonth, kind){
-  const E = D(endMonth);
-  const sign = kind === 'income' ? '' : '-';
-  return `select json_build_object(
-    'rows', (select json_agg(x) from (
-      select date_trunc('month', t.txn_date)::date as m, t.category_id as sub, sum(${sign}t.amount) as amt, count(*) as n
-      from transactions t join accounts a on a.id = t.account_id and ${ACCT_FILTER}
-      join categories c on c.id = t.category_id
-      where t.kind = ${lit(kind)} and (c.id = ${U(cid)} or c.parent_id = ${U(cid)})
-        and t.txn_date >= (${E}::date - interval '11 month') and t.txn_date < (${E}::date + interval '1 month')
-      group by 1, 2) x)
-  ) as data`;
-}
-function qCatTx(cid, m, kind){
-  const M = D(m);
-  return `select json_agg(x) as data from (select ${TX_COLS} from transactions t join categories c on c.id = t.category_id
-    join accounts a on a.id = t.account_id and ${ACCT_FILTER}
-    where t.kind = ${lit(kind)} and (c.id = ${U(cid)} or c.parent_id = ${U(cid)}) and t.txn_date >= ${M}::date and t.txn_date < (${M}::date + interval '1 month')
-    order by t.txn_date desc limit 200) x`;
+  return one(`select public.${name}(${p === undefined ? '' : lit(JSON.stringify(p)) + '::jsonb'}) as data`, write);
 }
 
 /* ---------- lookups ---------- */
@@ -359,17 +327,20 @@ async function load(key, fn){
   try { await fn(); } catch(e){ S.err[key] = errText(e); }
   S.busy[key] = false; render();
 }
-const loadBoot = () => load('boot', async () => { S.boot = await one(Q_BOOT); });
-const loadMonth = m => load('month', async () => { S.monthData[m] = await one(qMonth(m)); });
-const loadRecent = () => load('recent', async () => { S.recent = (await one(Q_RECENT)) || []; });
-const loadTxns = () => load('txns', async () => { S.txns = (await one(qTxns())) || []; });
+const loadBoot = () => load('boot', async () => { S.boot = await api('app_boot', {}); S.unlinked = S.web && !S.boot; });
+const loadMonth = m => load('month', async () => { S.monthData[m] = await api('app_month', {m: D(m).slice(1, -1)}); });
+const loadRecent = () => load('recent', async () => { S.recent = (await api('app_recent', {})) || []; });
+const loadTxns = () => load('txns', async () => {
+  S.txns = (await api('app_txns', {q: S.txq.trim(), month: S.txMonth, kind: S.txKind, acct: S.txAcct || null, review: !!S.txReview})) || [];
+});
 async function loadCat(){
   const c = S.cat; if(!c) return;
   await load('cat', async () => {
-    const [r, tx] = await Promise.all([one(qCat(c.cid, c.end, c.kind)), one(qCatTx(c.cid, c.sel, c.kind))]);
+    const [r, tx] = await Promise.all([api('app_cat', {cid: c.cid, end: c.end, kind: c.kind}), api('app_cat_tx', {cid: c.cid, m: c.sel, kind: c.kind})]);
     c.rows = (r && r.rows) || []; c.tx = tx || [];
   });
 }
+const loadCatTx = () => load('cat', async () => { S.cat.tx = (await api('app_cat_tx', {cid: S.cat.cid, m: S.cat.sel, kind: S.cat.kind})) || []; });
 async function refreshAll(){
   await loadBoot();
   if(!S.boot) return;
@@ -394,10 +365,15 @@ function render(){
   const focus = document.activeElement && document.activeElement.id ? {id: document.activeElement.id, s: document.activeElement.selectionStart} : null;
   const chartScroll = $('.chart') ? $('.chart').scrollLeft : null;
   let body;
+  let app = false;
   if(S.noRuntime) body = viewNoRuntime();
-  else if(!S.boot) body = S.err.boot ? `<main>${hdr('Manalody Money')}${banner(S.err.boot, true)}<button class="btn" data-act="reload">${svg('refresh', 18)} Try again</button></main>` : `<main>${hdr('Manalody Money')}<div class="skel">Loading your accounts…</div></main>`;
-  else body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport})[S.view]();
-  root.innerHTML = body + tabs() + (S.sheet ? sheet() : '') + (S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : '');
+  else if(S.fatal) body = `<main>${hdr('Manalody Money')}${banner(S.fatal, true)}</main>`;
+  else if(S.web && !S.authReady) body = `<main>${hdr('Manalody Money')}<div class="skel">Loading…</div></main>`;
+  else if(S.web && !S.user) body = viewLogin();
+  else if(S.unlinked) body = viewUnlinked();
+  else if(!S.boot) body = S.err.boot ? `<main>${hdr('Manalody Money')}${banner(S.err.boot, true)}<div class="row wrap"><button class="btn" data-act="reload">${svg('refresh', 18)} Try again</button>${S.web ? '<button class="btn" data-act="signout">Sign out</button>' : ''}</div></main>` : `<main>${hdr('Manalody Money')}<div class="skel">Loading your accounts…</div></main>`;
+  else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport})[S.view](); }
+  root.innerHTML = body + (app ? tabs() : '') + (S.sheet ? sheet() : '') + (S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : '');
   if(focus){ const el = document.getElementById(focus.id); if(el){ el.focus(); try { if(focus.s != null) el.setSelectionRange(focus.s, focus.s); } catch(e){} } }
   const ch = $('.chart');
   if(ch && S.view === 'cat' && S.cat){
@@ -418,6 +394,98 @@ function monthNav(m, act){
   const cur = monthOf(todayISO());
   return `<div class="row"><button class="icon-btn" data-act="${act}" data-d="-1" aria-label="Previous month">${svg('left', 18)}</button><span class="b" style="min-width:108px;text-align:center">${esc(mLabel(m))}</span><button class="icon-btn" data-act="${act}" data-d="1" aria-label="Next month"${m >= cur ? ' disabled' : ''}>${svg('right', 18)}</button></div>`;
 }
+/* ---- web sign-in ---- */
+function viewLogin(){
+  const l = S.login; const up = l.mode === 'up';
+  let h = `<main>${hdr(up ? 'Create your login' : 'Sign in', 'Manalody Money')}<section class="card">
+    <span class="sm muted">${up ? 'Use your own email and a password of at least 8 characters. Once you’re in, Ijas or Sherifa lets your login into the household.' : 'Sign in to see the household’s money.'}</span>
+    <form data-form="login" style="display:flex;flex-direction:column;gap:14px">
+    <label class="field"><span>Email</span><input id="login-email" class="inp" type="email" autocomplete="email" inputmode="email" required value="${esc(l.email)}"></label>
+    <label class="field"><span>Password</span><input id="login-pw" class="inp" type="password" autocomplete="${up ? 'new-password' : 'current-password'}" minlength="${up ? 8 : 6}" required value="${esc(l.pw)}"></label>`;
+  if(l.err) h += banner(l.err, true);
+  if(l.msg) h += banner(l.msg);
+  h += `<button class="btn primary" type="submit"${l.busy ? ' disabled' : ''}>${l.busy ? 'One moment…' : (up ? 'Create login' : 'Sign in')}</button></form>
+    <button class="link" data-act="loginmode" style="align-self:flex-start">${up ? 'Already have a login? Sign in' : 'First time here? Create a login'}</button></section></main>`;
+  return h;
+}
+function viewUnlinked(){
+  const email = S.user && S.user.email;
+  return `<main>${hdr('Almost there', 'Manalody Money')}<section class="card"><span class="b">You’re signed in as ${esc(email)}</span>
+    <span class="sm">This login isn’t part of the household yet. Ask whoever already uses the app to open <b>Home</b>, tap the person button at the top, and choose you next to <b>${esc(email)}</b>. Then tap Check again.</span>
+    ${S.err.boot ? banner(S.err.boot, true) : ''}
+    <div class="row wrap"><button class="btn accent" data-act="reload">${svg('refresh', 18)} Check again</button><button class="btn" data-act="signout">Sign out</button></div></section></main>`;
+}
+async function doLogin(){
+  const l = S.login; l.err = null; l.msg = null;
+  const email = l.email.trim(), password = l.pw;
+  if(!email || !password){ l.err = 'Enter your email and password.'; return render(); }
+  if(l.mode === 'up' && password.length < 8){ l.err = 'Use at least 8 characters for the password.'; return render(); }
+  l.busy = true; render();
+  try {
+    store('email', email);
+    if(l.mode === 'up'){
+      const {data, error} = await S.sb.auth.signUp({email, password});
+      if(error) throw error;
+      if(!data.session){ l.busy = false; l.mode = 'in'; l.pw = ''; l.msg = 'Login created. Confirm it from the email Supabase sent you, then sign in.'; return render(); }
+      await signedIn(data.session.user);
+    } else {
+      const {data, error} = await S.sb.auth.signInWithPassword({email, password});
+      if(error) throw error;
+      await signedIn(data.user);
+    }
+  } catch(e){
+    const m = String((e && e.message) || '');
+    l.err = /invalid login credentials/i.test(m) ? 'That email and password don’t match. If you haven’t made a login yet, choose “Create a login”.'
+      : /already registered/i.test(m) ? 'That email already has a login. Sign in instead.'
+      : /signups? not allowed|signup.*disabled/i.test(m) ? 'New logins are switched off for this app.'
+      : /email not confirmed/i.test(m) ? 'Confirm your email first: open the link Supabase emailed you.'
+      : webErr(e);
+  }
+  l.busy = false; render();
+}
+async function signedIn(user){
+  S.user = user; S.login.pw = ''; S.login.busy = false;
+  try { await api('app_claim'); } catch(e){}
+  render();
+  await refreshAll();
+}
+async function signOut(){
+  try { await S.sb.auth.signOut(); } catch(e){}
+  Object.assign(S, {user: null, boot: null, monthData: {}, recent: null, txns: null, cat: null, unlinked: false, sheet: null, view: 'home', stack: [], err: {}});
+  render();
+}
+async function openPeople(){
+  S.sheet = {type: 'people'}; S.pending = null; render();
+  try { S.pending = (await api('app_pending_logins')) || []; } catch(e){ S.pending = []; S.err.people = errText(e); }
+  render();
+}
+async function linkLogin(uid, mid){
+  delete S.err.people; S.busy.people = true; render();
+  try {
+    await api('app_link_login', {member_id: mid, user_id: uid}, true);
+    toast('Done. They can use the app now.');
+    await loadBoot(); S.pending = (await api('app_pending_logins')) || [];
+  } catch(e){ S.err.people = errText(e); }
+  S.busy.people = false; render();
+}
+function peopleSheet(){
+  const ms = B().members; const me = member(B().me); const open = ms.filter(m => !m.linked);
+  let h = `<div class="sheet-bg" data-act="closesheet"><div class="sheet" role="dialog" aria-label="Household" data-stop="1">
+    <div class="row sp"><h2>Household</h2><button class="icon-btn" data-act="closesheet" aria-label="Close">${svg('x', 18)}</button></div>
+    <div class="card" style="gap:4px"><span class="sm muted">Signed in as</span><span class="b">${esc(me ? me.name : '')} · ${esc(S.user ? S.user.email : '')}</span></div>
+    <section class="card tight"><div class="list">${ms.map(m => `<div class="item" style="cursor:default"><span class="ic" aria-hidden="true">${esc(initials(m.name))}</span><span class="grow b">${esc(m.name)}</span><span class="badge${m.linked ? ' good' : ' j'}">${m.linked ? 'Has a login' : 'No login yet'}</span></div>`).join('')}</div></section>`;
+  if(S.err.people) h += banner(S.err.people, true);
+  if(open.length){
+    h += `<section class="card"><h2>Waiting to get in</h2>`;
+    if(S.pending == null) h += `<span class="skel">Checking…</span>`;
+    else if(!S.pending.length) h += `<span class="sm muted">No one is waiting. Send ${esc(open.map(m => m.name).join(' or '))} the app’s address; after they create a login, it shows up here for you to let in.</span>`;
+    else h += S.pending.map(p => `<div class="review" style="gap:8px"><span class="b" style="overflow-wrap:anywhere">${esc(p.email)}</span><div class="row wrap">${open.map(m => `<button class="btn accent" data-act="linklogin" data-uid="${esc(p.user_id)}" data-mid="${esc(m.id)}"${S.busy.people ? ' disabled' : ''}>This is ${esc(m.name)}</button>`).join('')}</div></div>`).join('') +
+      `<span class="xs muted">Only let in an email you recognise. Anyone you let in can see and change everything.</span>`;
+    h += `</section>`;
+  }
+  return h + `<button class="btn" data-act="signout">Sign out</button></div></div>`;
+}
+
 function viewNoRuntime(){
   return `<main>${hdr('Manalody Money')}${banner('Open this app from claude.ai or the Claude app. It reads your household database through your Supabase connector, which only works there.')}</main>`;
 }
@@ -456,7 +524,7 @@ function daysLeft(m){
 function viewHome(){
   const tot = totals('all'); const ms = B().members; const md = S.monthData[S.month];
   const d = new Date(todayISO() + 'T12:00:00Z').toLocaleDateString('en-CA', {weekday:'long', day:'numeric', month:'long', timeZone:'UTC'});
-  let h = `<main>${hdr('Your money', d, `<button class="icon-btn" data-act="reload" aria-label="Refresh">${svg('refresh', 18)}</button>`)}`;
+  let h = `<main>${hdr('Your money', d, `<div class="row">${S.web ? `<button class="icon-btn" data-act="people" aria-label="Household and sign out">${svg('user', 18)}</button>` : ''}<button class="icon-btn" data-act="reload" aria-label="Refresh">${svg('refresh', 18)}</button></div>`)}`;
   if(B().review > 0) h += `<button class="banner" data-act="review" style="border:0;text-align:left;cursor:pointer">${svg('alert', 18)}<span><b>${B().review}</b> transaction${B().review > 1 ? 's' : ''} need a category check. Tap to review.</span></button>`;
   h += `<section class="hero" aria-label="Net worth"><div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Household net worth</span><span class="big">${cad(tot.net)}</span>
     <div class="row wrap xs" style="column-gap:12px;row-gap:2px;color:var(--hero-muted)">${ms.map((m, i) => `<span>${esc(m.name)} <b style="color:var(--hero-ink)">${cad(tot.byOwner['m' + i] || 0)}</b></span>`).join('')}<span>Joint <b style="color:var(--hero-ink)">${cad(tot.byOwner.joint || 0)}</b></span></div></div>
@@ -661,7 +729,7 @@ function viewAdd(){
 function viewImport(){
   const im = S.imp;
   let h = `<main>${hdr('Add from screenshots', null, null, true)}`;
-  if(!S.sample || !S.imgOK) return h + banner('Reading screenshots needs Claude, which isn’t available in this view. Open the app from claude.ai or the Claude app and allow it when asked.', true) + `</main>`;
+  if(!S.web && (!S.sample || !S.imgOK)) return h + banner('Reading screenshots needs Claude, which isn’t available in this view. Open the app from claude.ai or the Claude app and allow it when asked.', true) + `</main>`;
   if(im.step === 'pick' || im.step === 'reading'){
     h += `<section class="card"><span class="sm muted">Take screenshots of the transaction list in your bank or card app, then pick the account they belong to. Claude reads them, skips anything already saved and suggests a category for each.</span>
       <label class="field"><span>Account</span><select id="imp-acct" class="inp"><option value="">Choose the account</option>${acctOptions(im.acct)}</select></label>
@@ -707,6 +775,7 @@ function reviewRow(r, i){
 /* ---- sheets: add menu, edit ---- */
 function sheet(){
   const s = S.sheet;
+  if(s.type === 'people') return peopleSheet();
   if(s.type === 'addmenu') return `<div class="sheet-bg" data-act="closesheet"><div class="sheet" role="dialog" aria-label="Add transactions" data-stop="1">
     <div class="row sp"><h2>Add transactions</h2><button class="icon-btn" data-act="closesheet" aria-label="Close">${svg('x', 18)}</button></div>
     <button class="btn primary" data-act="openimp">${svg('camera', 20)} From screenshots</button><button class="btn" data-act="openadd" style="min-height:52px">${svg('pen', 18)} By hand</button></div></div>`;
@@ -739,19 +808,9 @@ async function saveAdd(){
     const amt = Math.abs(Number(String(a.amt).replace(/[$,\s]/g, '')));
     if(!amt) throw {code: 'bad_input', message: 'Enter an amount.'};
     if(a.kind === 'transfer' && !a.to) throw {code: 'bad_input', message: 'Choose the account the money went to.'};
-    const H = U(B().hh.id), A = U(a.acct);
-    let q;
-    if(a.kind === 'transfer'){
-      const g = U(newId());
-      q = `insert into transactions (household_id, account_id, txn_date, amount, kind, payee, note, transfer_group_id, source) values
-        (${H}, ${A}, ${D(a.date)}, ${N(-amt)}, 'transfer', ${lit(a.payee)}, ${lit(a.note)}, ${g}, 'manual'),
-        (${H}, ${U(a.to)}, ${D(a.date)}, ${N(amt)}, 'transfer', ${lit(a.payee)}, ${lit(a.note)}, ${g}, 'manual') returning id`;
-    } else {
-      q = `insert into transactions (household_id, account_id, txn_date, amount, kind, category_id, payee, note, source, category_source) values
-        (${H}, ${A}, ${D(a.date)}, ${N(a.kind === 'expense' ? -amt : amt)}, ${lit(a.kind)}, ${a.cat ? U(a.cat) : 'null'}, ${lit(a.payee)}, ${lit(a.note)}, 'manual', ${a.cat ? "'manual'" : 'null'}) returning id`;
-    }
     S.busy.add = true; render();
-    await sql(q, true);
+    D(a.date);
+    await api('app_add_txn', {kind: a.kind, amount: amt, acct: a.acct, to: a.kind === 'transfer' ? a.to : null, cat: a.kind === 'transfer' ? null : (a.cat || null), date: a.date, payee: a.payee, note: a.note}, true);
     store('lastAcct', a.acct);
     S.busy.add = false; S.monthData = {}; back(); toast('Saved');
     refreshAll();
@@ -766,14 +825,8 @@ function openEdit(id){
 async function saveEdit(){
   const s = S.sheet; const t = s.t; delete S.err.edit;
   try {
-    const sets = [`note = ${lit(s.note)}`];
-    if(t.kind !== 'transfer'){
-      sets.push(`payee = ${lit(s.payee)}`);
-      if((s.cat || '') !== (t.cid || '')) sets.push(`category_id = ${s.cat ? U(s.cat) : 'null'}`, `category_source = 'manual'`, `needs_review = false`);
-      else sets.push(`needs_review = false`);
-    }
     S.busy.edit = true; render();
-    await sql(`update transactions set ${sets.join(', ')} where id = ${U(t.id)} returning id`, true);
+    await api('app_update_txn', {id: t.id, note: s.note, payee: s.payee, cat: s.cat || null}, true);
     S.busy.edit = false; S.sheet = null; toast('Saved'); afterWrite();
   } catch(e){ S.busy.edit = false; S.err.edit = errText(e); render(); }
 }
@@ -781,7 +834,7 @@ async function deleteTx(){
   const t = S.sheet.t;
   try {
     S.busy.edit = true; render();
-    await sql(t.kind === 'transfer' && t.grp ? `delete from transactions where transfer_group_id = ${U(t.grp)} returning id` : `delete from transactions where id = ${U(t.id)} returning id`, true);
+    await api('app_delete_txn', {id: t.id}, true);
     S.busy.edit = false; S.sheet = null; toast('Deleted'); afterWrite();
   } catch(e){ S.busy.edit = false; S.err.edit = errText(e); render(); }
 }
@@ -797,8 +850,7 @@ async function saveBudget(){
     const v = Number(String(e.v).replace(/[$,\s]/g, ''));
     if(!isFinite(v) || v < 0) throw {code: 'bad_input', message: 'Enter the monthly limit as a number.'};
     S.busy.budget = true; render();
-    await sql(`insert into budgets (household_id, category_id, month, amount) values (${U(B().hh.id)}, ${U(e.cid)}, ${D(S.month)}, ${N(v)})
-      on conflict (category_id, month) do update set amount = excluded.amount returning id`, true);
+    await api('app_set_budget', {cid: e.cid, month: S.month, amount: v}, true);
     S.busy.budget = false; S.budgetEdit = null; delete S.monthData[S.month]; await loadMonth(S.month); toast('Budget saved');
   } catch(err){ S.busy.budget = false; S.err.budget = errText(err); render(); }
 }
@@ -806,9 +858,7 @@ async function removeBudget(){
   const e = S.budgetEdit;
   try {
     S.busy.budget = true; render();
-    await sql(`delete from budgets where category_id = ${U(e.cid)} and month >= ${D(S.month)} returning id;`, true);
-    await sql(`insert into budgets (household_id, category_id, month, amount) select ${U(B().hh.id)}, ${U(e.cid)}, ${D(S.month)}, 0
-      where exists (select 1 from budgets where category_id = ${U(e.cid)} and month < ${D(S.month)}) returning id`, true);
+    await api('app_remove_budget', {cid: e.cid, month: S.month}, true);
     S.busy.budget = false; S.budgetEdit = null; S.monthData = {}; await loadMonth(S.month); toast('Budget removed');
   } catch(err){ S.busy.budget = false; S.err.budget = errText(err); render(); }
 }
@@ -848,10 +898,11 @@ ${paths.join('\n')}
 Reply with only a JSON array of these objects, in the order they appear.`;
   let out;
   try {
-    out = await S.sample.json(prompt, {images: im.files.slice(0, S.imgMax), signal: im.ctl.signal, modelTier: 'default', onText: () => { if(im.status !== 'Writing out the transactions…'){ im.status = 'Writing out the transactions…'; render(); } }});
+    out = S.web ? await readScreensWeb(prompt, im.files.slice(0, S.imgMax), im.ctl.signal)
+      : await S.sample.json(prompt, {images: im.files.slice(0, S.imgMax), signal: im.ctl.signal, modelTier: 'default', onText: () => { if(im.status !== 'Writing out the transactions…'){ im.status = 'Writing out the transactions…'; render(); } }});
   } catch(e){
     im.step = 'pick';
-    im.error = e.code === 'cancelled' ? null : ({not_granted: 'Claude wasn’t allowed to read screenshots in this app. Reload and choose Allow to use this.', rate_limited: 'Too many requests right now. Wait a minute and try again.', image_rejected: 'One of the images couldn’t be read. Use PNG or JPEG screenshots.', invalid_json: 'Claude’s answer couldn’t be read. Try again, or use fewer screenshots at once.', refused: 'Claude couldn’t read these screenshots. Try clearer or fewer screenshots.'}[e.code] || 'Reading failed. Try again.');
+    im.error = e.code === 'cancelled' ? null : ({no_api_key: 'Reading screenshots isn’t switched on yet. It needs an Anthropic API key added to the Supabase project (see the app’s README). Until then, use the Claude version of the app for screenshots.', bad_api_key: 'The Anthropic API key saved in Supabase was refused. Check it in the Supabase dashboard.', not_a_member: 'Your login isn’t part of the household.', decode: 'One of the images couldn’t be opened here. Use PNG or JPEG screenshots.', not_granted: 'Claude wasn’t allowed to read screenshots in this app. Reload and choose Allow to use this.', rate_limited: 'Too many requests right now. Wait a minute and try again.', image_rejected: 'One of the images couldn’t be read. Use PNG or JPEG screenshots.', invalid_json: 'Claude’s answer couldn’t be read. Try again, or use fewer screenshots at once.', refused: 'Claude couldn’t read these screenshots. Try clearer or fewer screenshots.'}[e.code] || 'Reading failed. Try again.');
     return render();
   }
   if(!Array.isArray(out) || !out.length){ im.step = 'pick'; im.error = 'No transactions were found in these screenshots.'; return render(); }
@@ -867,12 +918,7 @@ Reply with only a JSON array of these objects, in the order they appear.`;
   im.status = 'Checking for duplicates and categories…'; render();
   try {
     const payload = rows.map((r, i) => ({i, d: r.date, descr: r.description, amt: r.dir === 'in' ? r.amount : -r.amount, occ: r.occ}));
-    const res = await one(`select json_agg(x) as data from (
-      select r.i,
-        exists (select 1 from transactions t where t.account_id = ${U(a.id)} and t.fingerprint = make_fingerprint(${U(a.id)}, r.d, r.amt, r.descr, r.occ)) as exact,
-        (select json_agg(json_build_object('d', f.txn_date, 'payee', coalesce(f.payee, f.description_raw, (select c.name from transactions t2 join categories c on c.id = t2.category_id where t2.id = f.transaction_id)))) from (select * from find_possible_duplicates(${U(a.id)}, r.d, r.amt, r.descr) limit 2) f) as dups,
-        (select row_to_json(m) from match_category_rule(${U(B().hh.id)}, ${U(a.id)}, r.descr, r.amt) m) as rule
-      from jsonb_to_recordset(${lit(JSON.stringify(payload))}::jsonb) as r(i int, d date, descr text, amt numeric, occ int)) x`);
+    const res = await api('app_import_check', {acct: a.id, rows: payload});
     for(const x of res || []){
       const r = rows[x.i]; if(!r) continue;
       r.exact = !!x.exact; r.dups = x.dups || [];
@@ -902,30 +948,39 @@ async function saveImport(){
   const dupCount = im.rows.length - chosen.length;
   im.saving = true; render();
   try {
-    const res = await one(`with b as (
-        insert into import_batches (household_id, source, account_id, file_name, status, row_count, duplicate_count)
-        values (${U(B().hh.id)}, 'screenshot', ${U(a.id)}, ${lit(im.files.length + ' screenshot(s)')}, 'committed', ${im.rows.length}, ${dupCount}) returning id),
-      r as (select * from jsonb_to_recordset(${lit(JSON.stringify(data))}::jsonb) as x(d date, descr text, payee text, amt numeric, occ int, kind txn_kind, cat uuid, csrc text, conf numeric, pending boolean, "to" uuid, grp uuid)),
-      ins as (
-        insert into transactions (household_id, account_id, txn_date, amount, kind, category_id, payee, description_raw, transfer_group_id, status, source, import_batch_id, fingerprint, category_source, category_confidence, needs_review)
-        select ${U(B().hh.id)}, ${U(a.id)}, r.d, r.amt, r.kind, r.cat, r.payee, r.descr, r.grp, case when r.pending then 'pending' else 'posted' end::txn_status, 'screenshot', (select id from b),
-          make_fingerprint(${U(a.id)}, r.d, r.amt, r.descr, r.occ), r.csrc, r.conf, (r.kind <> 'transfer' and r.cat is null)
-        from r
-        on conflict (account_id, fingerprint) where fingerprint is not null do nothing
-        returning transfer_group_id),
-      leg as (
-        insert into transactions (household_id, account_id, txn_date, amount, kind, payee, description_raw, transfer_group_id, source, import_batch_id)
-        select ${U(B().hh.id)}, r."to", r.d, -r.amt, 'transfer', r.payee, r.descr, r.grp, 'screenshot', (select id from b)
-        from r join ins on ins.transfer_group_id = r.grp
-        returning id),
-      select json_build_object('saved', (select count(*) from ins), 'legs', (select count(*) from leg), 'batch', (select id from b)) as data`, true);
-    if(res && res.batch) sql(`update import_batches set imported_count = ${N(res.saved)} where id = ${U(res.batch)} returning id`, true).catch(() => {});
+    const res = await api('app_import_save', {acct: a.id, label: im.files.length + ' screenshot(s)', row_count: im.rows.length, dup_count: dupCount, rows: data}, true);
     store('impAcct', im.acct);
     im.saving = false; im.step = 'done';
     const n = res ? Number(res.saved) : chosen.length;
     im.done = `Saved ${n} transaction${n === 1 ? '' : 's'} to ${a.name}.` + (chosen.length - n > 0 ? ` ${chosen.length - n} were already saved and were skipped.` : '');
     S.monthData = {}; refreshAll(); render();
   } catch(e){ im.saving = false; im.error = 'Not saved. ' + errText(e); render(); }
+}
+
+// Shrinks each screenshot to what Claude reads anyway (long side 1568 px) and sends them to the
+// read-screenshots function, which returns Claude's answer as text.
+async function shrink(file){
+  let bmp;
+  try { bmp = await createImageBitmap(file); } catch(e){ throw {code: 'decode'}; }
+  const k = Math.min(1, 1568 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return {type: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.9).split(',')[1]};
+}
+async function readScreensWeb(prompt, files, signal){
+  const images = await Promise.all(files.map(shrink));
+  S.imp.status = 'Claude is reading the transactions. This usually takes 20–60 seconds.'; render();
+  const cancelled = new Promise((_, rej) => signal.addEventListener('abort', () => rej({code: 'cancelled'})));
+  const {data, error} = await Promise.race([S.sb.functions.invoke('read-screenshots', {body: {prompt, images}}), cancelled]);
+  if(error){
+    let code = 'failed';
+    try { const b = await error.context.json(); code = b.error || code; } catch(e){}
+    throw {code: {image_rejected: 'image_rejected', rate_limited: 'rate_limited', refused: 'refused'}[code] || code};
+  }
+  const text = String((data && data.text) || '');
+  const i = text.indexOf('['), j = text.lastIndexOf(']');
+  if(i < 0 || j < i) throw {code: 'invalid_json'};
+  try { return JSON.parse(text.slice(i, j + 1)); } catch(e){ throw {code: 'invalid_json'}; }
 }
 
 /* ---------- events ---------- */
@@ -936,7 +991,11 @@ document.addEventListener('click', e => {
   switch(act){
     case 'tab': S.stack = []; go(el.dataset.v); break;
     case 'back': back(); break;
-    case 'reload': S.monthData = {}; refreshAll(); break;
+    case 'reload': S.monthData = {}; if(S.unlinked && S.web){ api('app_claim').catch(() => {}).then(refreshAll); } else refreshAll(); break;
+    case 'loginmode': S.login.mode = S.login.mode === 'up' ? 'in' : 'up'; S.login.err = null; S.login.msg = null; render(); break;
+    case 'signout': signOut(); break;
+    case 'people': openPeople(); break;
+    case 'linklogin': linkLogin(el.dataset.uid, el.dataset.mid); break;
     case 'thismonth': setMonth(monthOf(todayISO())); break;
     case 'month': setMonth(addMonths(S.month, +el.dataset.d)); break;
     case 'owner': S.owner = el.dataset.v; render(); break;
@@ -944,8 +1003,8 @@ document.addEventListener('click', e => {
     case 'inskind': S.insKind = el.dataset.v; render(); break;
     case 'cat': if(el.dataset.cid) openCat(el.dataset.cid, el.dataset.k); break;
     case 'catsw': S.cat.cid = el.dataset.cid; S.cat.rows = null; S.cat.tx = null; S.cat.scrolled = false; render(); loadCat(); break;
-    case 'catsel': S.cat.sel = el.dataset.m; S.cat.tx = null; render(); load('cat', async () => { S.cat.tx = (await one(qCatTx(S.cat.cid, S.cat.sel, S.cat.kind))) || []; }); if(!S.monthData[S.cat.sel]) loadMonth(S.cat.sel); break;
-    case 'catm': { const ms = []; for(let i = 11; i >= 0; i--) ms.push(addMonths(S.cat.end, -i)); const i = ms.indexOf(S.cat.sel) + (+el.dataset.d); if(ms[i]){ S.cat.sel = ms[i]; S.cat.tx = null; S.cat.scrolled = false; render(); load('cat', async () => { S.cat.tx = (await one(qCatTx(S.cat.cid, S.cat.sel, S.cat.kind))) || []; }); } break; }
+    case 'catsel': S.cat.sel = el.dataset.m; S.cat.tx = null; render(); loadCatTx(); if(!S.monthData[S.cat.sel]) loadMonth(S.cat.sel); break;
+    case 'catm': { const ms = []; for(let i = 11; i >= 0; i--) ms.push(addMonths(S.cat.end, -i)); const i = ms.indexOf(S.cat.sel) + (+el.dataset.d); if(ms[i]){ S.cat.sel = ms[i]; S.cat.tx = null; S.cat.scrolled = false; render(); loadCatTx(); } break; }
     case 'alltx': openTxns(); break;
     case 'review': openTxns({txReview: true}); break;
     case 'acct': openTxns({txAcct: el.dataset.id}); break;
@@ -973,11 +1032,13 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target.dataset.form;
-  if(f === 'add') saveAdd(); else if(f === 'edit') saveEdit(); else if(f === 'budget') saveBudget();
+  if(f === 'login') doLogin(); else if(f === 'add') saveAdd(); else if(f === 'edit') saveEdit(); else if(f === 'budget') saveBudget();
 });
 let searchT;
 document.addEventListener('input', e => {
   const t = e.target; const id = t.id || '';
+  if(id === 'login-email' && S.login){ S.login.email = t.value; return; }
+  if(id === 'login-pw' && S.login){ S.login.pw = t.value; return; }
   if(id === 'txq'){ S.txq = t.value; clearTimeout(searchT); searchT = setTimeout(() => { S.txns = null; render(); loadTxns(); }, 450); return; }
   if(id.startsWith('add-') && S.add){ const k = {'add-amt':'amt','add-date':'date','add-payee':'payee','add-note':'note'}[id]; if(k) S.add[k] = t.value; return; }
   if(id.startsWith('ed-') && S.sheet){ const k = {'ed-payee':'payee','ed-note':'note'}[id]; if(k) S.sheet[k] = t.value; return; }
@@ -1002,7 +1063,7 @@ document.addEventListener('change', e => {
 async function boot(){
   S.month = monthOf(todayISO()); S.txMonth = S.month;
   render();
-  if(!window.claude || !window.claude.use){ S.noRuntime = true; return render(); }
+  if(!window.claude || !window.claude.use) return bootWeb();
   const [mcp, sample] = await Promise.all(['mcp', 'sample'].map(n => window.claude.use(n).catch(() => null)));
   S.mcp = mcp; S.sample = sample;
   if(sample && sample.limits){
@@ -1013,6 +1074,24 @@ async function boot(){
   if(!mcp){ S.noRuntime = true; return render(); }
   refreshAll();
 }
+// Outside Claude: sign in to Supabase and read screenshots through the read-screenshots function.
+async function bootWeb(){
+  S.web = true; S.imgOK = true; S.imgMax = 5; S.imgTypes = 'image/png,image/jpeg,image/webp,image/heic,image/heif';
+  S.login = {mode: 'in', email: store('email') || '', pw: '', err: null, msg: null, busy: false};
+  try {
+    const m = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    S.sb = m.createClient(CFG.url, CFG.key, {auth: {persistSession: true, autoRefreshToken: true, detectSessionInUrl: true}});
+  } catch(e){ S.fatal = 'The app couldn’t load. Check your connection and reload the page.'; return render(); }
+  S.sb.auth.onAuthStateChange((ev, session) => {
+    if(ev === 'SIGNED_OUT' && S.user){ Object.assign(S, {user: null, boot: null, monthData: {}, unlinked: false, sheet: null}); render(); }
+    else if(session && S.user) S.user = session.user;
+  });
+  const {data} = await S.sb.auth.getSession();
+  S.authReady = true;
+  if(data && data.session) await signedIn(data.session.user); else render();
+}
 boot();
 })();
 </script>
+</body>
+</html>
