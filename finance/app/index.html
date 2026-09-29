@@ -73,7 +73,8 @@ h2{margin:0;font-size:15px;font-weight:700}
 .tile{background:var(--hero-2);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:2px;border:0;text-align:left;color:var(--hero-ink);cursor:pointer}
 .tile .k{font-size:11px;color:var(--hero-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .tile .v{font-size:14px;font-weight:700;white-space:nowrap}
 .mtiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.mtile{background:var(--card);border-radius:16px;padding:14px 12px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--shadow)}
+.mtile{background:var(--card);border-radius:16px;padding:14px 12px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--shadow);border:0;text-align:left;color:inherit;font:inherit}
+button.mtile{cursor:pointer}
 .mtile .k{font-size:12px;color:var(--muted);font-weight:600} .mtile .v{font-size:15px;font-weight:700;white-space:nowrap}
 @media (max-width:380px){.mtile .v{font-size:13px}.tile .v{font-size:13px}}
 .hero-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:12px;color:var(--hero-muted)}
@@ -378,7 +379,7 @@ const loadBoot = () => load('boot', async () => { S.boot = await api('app_boot',
 const loadMonth = m => load('month', async () => { S.monthData[m] = await api('app_month', {m: D(m).slice(1, -1)}); });
 const loadRecent = () => load('recent', async () => { S.recent = (await api('app_recent', {})) || []; });
 const loadTxns = () => load('txns', async () => {
-  S.txns = (await api('app_txns', {q: S.txq.trim(), month: S.txMonth, kind: S.txKind, acct: S.txAcct || null, review: !!S.txReview})) || [];
+  S.txns = (await api('app_txns', {q: S.txBreak ? '' : S.txq.trim(), month: S.txMonth, kind: S.txBreak || S.txKind, acct: S.txBreak ? null : (S.txAcct || null), review: !S.txBreak && !!S.txReview, counted: !!S.txBreak})) || [];
 });
 async function loadCat(){
   const c = S.cat; if(!c) return;
@@ -405,7 +406,7 @@ async function refreshAll(){
 function go(view, push){ if(push) S.stack.push(S.view); S.view = view; S.sheet = null; window.scrollTo(0, 0); render(); }
 function back(){ S.view = S.stack.pop() || 'home'; render(); }
 function openTxns(opts){
-  Object.assign(S, {txq: '', txKind: 'all', txAcct: '', txReview: false, txMonth: S.month}, opts || {});
+  Object.assign(S, {txq: '', txKind: 'all', txAcct: '', txReview: false, txBreak: null, txMonth: S.month}, opts || {});
   S.txns = null; go('txns', true); loadTxns();
 }
 function openCat(cid, kind){
@@ -603,7 +604,7 @@ function viewHome(){
   else {
     const saved = Number(md.income) - Number(md.spent);
     h += `<div class="row sp"><h2>${esc(mLabel(S.month))}</h2>${S.month !== monthOf(todayISO()) ? `<button class="link" data-act="thismonth">Back to this month</button>` : ''}</div>
-      <section class="mtiles" aria-label="This month"><div class="mtile"><span class="k">Income</span><span class="v pos">${cad(md.income)}</span></div><div class="mtile"><span class="k">Spent</span><span class="v">${cad(md.spent)}</span></div><div class="mtile"><span class="k">Saved</span><span class="v${saved < 0 ? ' neg' : ''}">${cad(saved)}</span>${Number(md.invested) > 0 ? `<span class="xs pos b">${cad(md.invested)} invested</span>` : ''}</div></section>`;
+      <section class="mtiles" aria-label="This month"><button class="mtile" data-act="breakdown" data-v="income" aria-label="Income ${cad(md.income)}: see the transactions"><span class="k">Income ›</span><span class="v pos">${cad(md.income)}</span></button><button class="mtile" data-act="breakdown" data-v="expense" aria-label="Spent ${cad(md.spent)}: see the transactions"><span class="k">Spent ›</span><span class="v">${cad(md.spent)}</span></button><button class="mtile" data-act="breakdown" data-v="inout" aria-label="Saved ${cad(saved)}: see the transactions"><span class="k">Saved ›</span><span class="v${saved < 0 ? ' neg' : ''}">${cad(saved)}</span>${Number(md.invested) > 0 ? `<span class="xs pos b">${cad(md.invested)} invested</span>` : ''}</button></section>`;
     const bs = budgetSummary(md);
     if(bs){
       const pct = bs.limit ? Math.round(bs.spent / bs.limit * 100) : 0; const dl = daysLeft(S.month); const left = bs.limit - bs.spent;
@@ -832,7 +833,35 @@ function viewBudYear(){
 }
 
 /* ---- transactions ---- */
+// The transactions behind Home's Income, Spent or Saved figure for a month: only accounts that
+// count in totals, and never transfers between your own accounts, so the total matches the tile.
+function viewBreakdown(){
+  const b = S.txBreak; const mon = MONTHS_L[+S.txMonth.slice(5, 7) - 1];
+  const title = {income: 'Income', expense: 'Spent', inout: 'Saved'}[b] + ' in ' + mon;
+  let h = `<main>${hdr(title, null, null, true)}<div class="row sp">${monthNav(S.txMonth, 'txm')}</div>`;
+  if(S.err.txns) h += banner(S.err.txns, true);
+  if(!S.txns) return h + `<div class="skel">Loading…</div></main>`;
+  const inc = S.txns.filter(t => t.kind === 'income'), exp = S.txns.filter(t => t.kind === 'expense');
+  const ti = inc.reduce((s, t) => s + Number(t.amt), 0), te = -exp.reduce((s, t) => s + Number(t.amt), 0);
+  const n = S.txns.length;
+  let sum = `<section class="card" style="gap:6px">`;
+  if(b === 'income') sum += `<span class="sm muted sb">${n} transaction${n === 1 ? '' : 's'}</span><span class="big pos" style="font-size:34px">${cad(ti)}</span>`;
+  else if(b === 'expense') sum += `<span class="sm muted sb">${n} transaction${n === 1 ? '' : 's'}${exp.some(t => Number(t.amt) > 0) ? ' · refunds are subtracted' : ''}</span><span class="big" style="font-size:34px">${cad(te)}</span>`;
+  else sum += `<span class="big${ti - te < 0 ? ' neg' : ''}" style="font-size:34px">${cad(ti - te)}</span>
+    <div class="row sp sm"><span>Income · ${inc.length}</span><span class="b pos">${cad(ti)}</span></div><div class="row sp sm"><span>Spent · ${exp.length}</span><span class="b">−${cad(te)}</span></div>`;
+  sum += `<span class="xs muted">Accounts counted in totals only. Transfers between your own accounts${Number((S.monthData[S.txMonth] || {}).invested) > 0 && b === 'inout' ? ' (including money moved to investments)' : ''} are not included.</span></section>`;
+  h += sum;
+  if(n >= 1000) h += banner('Showing the latest 1,000 transactions only.');
+  if(!n) return h + `<div class="skel">Nothing recorded for ${esc(mLabel(S.txMonth))}.</div></main>`;
+  const days = {}; S.txns.forEach(t => { (days[t.d] = days[t.d] || []).push(t); });
+  for(const d of Object.keys(days)){
+    const net = days[d].reduce((s, t) => s + Number(t.amt), 0);
+    h += `<section class="card tight" style="gap:0"><div class="row sp xs muted b" style="padding:10px 0 4px"><span>${esc(dayLabel(d))}</span><span>${cadS(net)}</span></div><div class="list">${days[d].map(txRow).join('')}</div></section>`;
+  }
+  return h + `<button class="link" data-act="alltx" style="align-self:flex-start">See all transactions for ${esc(mLabel(S.txMonth))}</button></main>`;
+}
 function viewTxns(){
+  if(S.txBreak) return viewBreakdown();
   const title = S.txReview ? 'To review' : (S.txAcct ? (acct(S.txAcct) || {}).name || 'Transactions' : 'Transactions');
   const ta = S.txAcct && acct(S.txAcct);
   let h = `<main>${hdr(title, ta ? 'Balance ' + cad(ta.bal) + (ta.active ? '' : ' · inactive') : null, null, true)}`;
@@ -1183,7 +1212,8 @@ document.addEventListener('click', e => {
     case 'catsw': S.cat.cid = el.dataset.cid; S.cat.rows = null; S.cat.tx = null; S.cat.scrolled = false; render(); loadCat(); break;
     case 'catsel': S.cat.sel = el.dataset.m; S.cat.tx = null; render(); loadCatTx(); if(!S.monthData[S.cat.sel]) loadMonth(S.cat.sel); break;
     case 'catm': { const ms = []; for(let i = 11; i >= 0; i--) ms.push(addMonths(S.cat.end, -i)); const i = ms.indexOf(S.cat.sel) + (+el.dataset.d); if(ms[i]){ S.cat.sel = ms[i]; S.cat.tx = null; S.cat.scrolled = false; render(); loadCatTx(); } break; }
-    case 'alltx': openTxns(); break;
+    case 'alltx': openTxns(S.view === 'txns' && S.txBreak ? {txMonth: S.txMonth} : undefined); break;
+    case 'breakdown': openTxns({txBreak: el.dataset.v}); break;
     case 'review': openTxns({txReview: true}); break;
     case 'acct': openTxns({txAcct: el.dataset.id}); break;
     case 'txkind': S.txKind = el.dataset.v; S.txns = null; render(); loadTxns(); break;
