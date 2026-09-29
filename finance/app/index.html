@@ -961,6 +961,7 @@ function sheet(){
       <form data-form="edit" style="display:flex;flex-direction:column;gap:12px">`;
     if(t.kind !== 'transfer') h += `<label class="field"><span>Category</span><select id="ed-cat" class="inp">${catOptions(t.kind, s.cat, true)}</select><span class="xs muted">Changing it teaches the app: the next ${esc(t.descr || t.payee || 'transaction')} gets the same category.</span></label>
       <label class="field"><span>Payee</span><input id="ed-payee" class="inp" value="${esc(s.payee)}"></label>`;
+    h += `<label class="field"><span>Date${t.kind === 'transfer' ? ' (both accounts)' : ''}</span><input id="ed-date" class="inp" type="date" value="${esc(s.date)}" required></label>`;
     h += `<label class="field"><span>Note</span><input id="ed-note" class="inp" value="${esc(s.note)}"></label>`;
     if(S.err.edit) h += banner(S.err.edit, true);
     h += `<button class="btn primary" type="submit"${S.busy.edit ? ' disabled' : ''}>Save changes</button></form>`;
@@ -995,13 +996,14 @@ function openEdit(id){
   const all = [...(S.recent || []), ...(S.txns || []), ...((S.cat && S.cat.tx) || [])];
   const t = all.find(x => x.id === id); if(!t) return;
   delete S.err.edit;
-  S.sheet = {type: 'edit', t, cat: t.cid || '', payee: t.payee || '', note: t.note || '', confirmDelete: false}; render();
+  S.sheet = {type: 'edit', t, cat: t.cid || '', payee: t.payee || '', note: t.note || '', date: t.d, confirmDelete: false}; render();
 }
 async function saveEdit(){
   const s = S.sheet; const t = s.t; delete S.err.edit;
   try {
     S.busy.edit = true; render();
-    await api('app_update_txn', {id: t.id, note: s.note, payee: s.payee, cat: s.cat || null}, true);
+    D(s.date);
+    await api('app_update_txn', {id: t.id, note: s.note, payee: s.payee, cat: s.cat || null, date: s.date}, true);
     S.busy.edit = false; S.sheet = null; toast('Saved'); afterWrite();
   } catch(e){ S.busy.edit = false; S.err.edit = errText(e); render(); }
 }
@@ -1263,7 +1265,7 @@ document.addEventListener('input', e => {
   if(id === 'login-pw' && S.login){ S.login.pw = t.value; return; }
   if(id === 'txq'){ S.txq = t.value; clearTimeout(searchT); searchT = setTimeout(() => { S.txns = null; render(); loadTxns(); }, 450); return; }
   if(id.startsWith('add-') && S.add){ const k = {'add-amt':'amt','add-date':'date','add-payee':'payee','add-note':'note'}[id]; if(k) S.add[k] = t.value; return; }
-  if(id.startsWith('ed-') && S.sheet){ const k = {'ed-payee':'payee','ed-note':'note'}[id]; if(k) S.sheet[k] = t.value; return; }
+  if(id.startsWith('ed-') && S.sheet){ const k = {'ed-payee':'payee','ed-note':'note','ed-date':'date'}[id]; if(k) S.sheet[k] = t.value; return; }
   if(id === 'bud-amt' && S.bedit){ S.bedit.v = t.value; }
 });
 document.addEventListener('change', e => {
@@ -1273,6 +1275,7 @@ document.addEventListener('change', e => {
   else if(id === 'add-to'){ S.add.to = t.value; }
   else if(id === 'add-cat'){ S.add.cat = t.value; }
   else if(id === 'ed-cat'){ S.sheet.cat = t.value; }
+  else if(id === 'ed-date'){ S.sheet.date = t.value; }
   else if(id === 'imp-acct'){ S.imp.acct = t.value; render(); }
   else if(id === 'imp-files'){ S.imp.files = Array.from(t.files || []); render(); }
   else if(id.startsWith('imp-on-')){ S.imp.rows[+t.dataset.i].on = t.checked; render(); }
