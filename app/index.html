@@ -418,6 +418,8 @@ select json_build_object(
    'never', (select count(*) from schools where emails_sent = 0 and not do_not_contact and stage not in ('do_not_contact','bounced','no_email')),
    'contacted', (select count(*) from schools where emails_sent > 0),
    'ready', (select count(*) from outreach_due where next_touch = 1),
+   'ready_restart', (select count(*) from outreach_due where next_touch = 1 and emailed_before_july),
+   'times', (select json_object_agg(t, n) from (select case when emails_sent = 0 then '0' when emails_sent = 1 then '1' when emails_sent = 2 then '2' when emails_sent = 3 then '3' else '4' end as t, count(*) as n from schools group by 1) x),
    'excluded', (select count(*) from schools where do_not_contact or casa_only or stage in ('do_not_contact','bounced','no_email')),
    'added_today', (select count(*) from schools, b where 'lead_finder' = any(sources) and (created_at at time zone 'America/Toronto')::date = b.d)),
  'today', json_build_object(
@@ -846,16 +848,17 @@ function viewToday(){
     <div class="xs muted">A lead turns hot the first time a school replies. ${({today:'Since midnight', week:'Since Monday', month:'Since the 1st', all:'Everything on record'})[S.period]}.</div>`;
   h += `</section>`;
 
-  /* 2. lead list */
+  /* 2. lead list: how many times each school has been emailed */
   const L = H && H.leads;
-  if(L){ const pc = L.total ? Math.round(L.contacted / L.total * 100) : 0;
-    h += `<button type="button" class="card stack" data-act="tab" data-k="bank" style="gap:10px"><div class="between"><span class="b">Lead list</span><span class="xs muted">${L.total} schools ${svg('chev',14,2)}</span></div>
-      <div class="bar" style="height:10px"><span style="width:${pc}%;background:var(--replied-fg)"></span><span style="width:${100-pc}%;background:var(--faint)"></span></div>
-      <div class="grid3" style="text-align:left">
-        <span class="stack" style="gap:0"><b class="mono" style="font-size:20px">${L.total}</b><span class="xs muted">In the lead list</span></span>
-        <span class="stack" style="gap:0"><b class="mono" style="font-size:20px;color:var(--replied-fg)">${L.contacted}</b><span class="xs muted">Contacted so far</span></span>
-        <span class="stack" style="gap:0"><b class="mono" style="font-size:20px">${L.never}</b><span class="xs muted">Never contacted</span></span></div>
-      <span class="xs muted">${L.ready} ready for a first email · ${L.excluded} excluded (do not contact, bounced, Casa only)</span></button>`; }
+  if(L){ const tm = L.times || {}; const n = k => +tm[k] || 0;
+    const rows = [['0','Not yet contacted','neutral'],['1','Contacted once','replied'],['2','Contacted 2 times','replied'],['3','Contacted 3 times','meeting'],['4','Contacted 4+ times','proposal']];
+    const max = Math.max(1, ...rows.map(r => n(r[0])));
+    h += `<section class="card stack" style="gap:10px"><div class="between"><span class="b">Lead list</span><span class="xs muted">${L.total} schools</span></div>
+      <div class="stack" style="gap:8px">${rows.map(([k,label,key]) => `<div class="row" style="gap:10px"><span class="small" style="width:132px;flex-shrink:0">${label}</span>
+        <span style="flex:1;height:10px;border-radius:999px;background:var(--sunk);overflow:hidden"><span style="display:block;height:100%;width:${n(k)/max*100}%;background:var(--${key}-fg)"></span></span>
+        <b class="mono small" style="width:34px;text-align:right">${n(k)}</b></div>`).join('')}</div>
+      <div class="xs muted" style="padding-top:8px;border-top:1px solid var(--line)">Counts every email ever sent to the school. <b style="color:var(--ink)">${L.ready}</b> are queued for a first email in the current round: ${L.ready_restart} emailed by Tom in May/June and being restarted, ${L.ready - L.ready_restart} new. ${L.excluded} are excluded (do not contact, bounced, Casa only).</div>
+      <button type="button" class="btn full" data-act="tab" data-k="bank">See the queue in Leads</button></section>`; }
 
   /* 3. Claude's tasks today */
   h += tasksToday();
@@ -1167,11 +1170,11 @@ function viewBank(){
   const regs = ['all', ...[...new Set(all.map(b => b.reg))].sort((a,b) => all.filter(x => x.reg===b).length - all.filter(x => x.reg===a).length).slice(0,8)];
   const shown = all.filter(b => S.bankRegion === 'all' || b.reg === S.bankRegion);
   const due = (S.stats && S.stats.due) || {};
-  let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><h1>Lead Bank</h1><div class="sub">Schools ready for a first cold email</div></div>${refreshBtn(S.busy.bank)}</header>`;
+  let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><h1>Lead Bank</h1><div class="sub">Schools queued for a first email in the current round (new schools, plus May/June schools being restarted)</div></div>${refreshBtn(S.busy.bank)}</header>`;
   h += sectionErr('bank','stats');
   h += `<section class="card stack" style="background:var(--inv);color:var(--inv-ink);border-color:var(--inv);gap:12px"><div class="row"><span class="ico" style="width:36px;height:36px;background:var(--inv-2);color:var(--won-fg)">${svg('spark',18)}</span>
     <span class="stack" style="gap:1px"><span class="b small">Filled by Claude’s Lead Finder (6 pm daily)</span><span class="xs" style="color:var(--inv-muted)">The evening agent drafts up to 20 of these a night, direct emails first, max 5 per city</span></span></div>
-    <div class="grid3"><span class="stat" style="background:var(--inv-2);border:none"><span class="v">${all.length}</span><span class="k" style="color:var(--inv-muted)">Ready</span></span>
+    <div class="grid3"><span class="stat" style="background:var(--inv-2);border:none"><span class="v">${all.length}</span><span class="k" style="color:var(--inv-muted)">Queued</span></span>
     <span class="stat" style="background:var(--inv-2);border:none"><span class="v">${(+due['2']||0)+(+due['3']||0)}</span><span class="k" style="color:var(--inv-muted)">Follow-ups due</span></span>
     <span class="stat" style="background:var(--inv-2);border:none"><span class="v">${stageCount('do_not_contact')+stageCount('bounced')+((S.stats&&S.stats.casa)||0)}</span><span class="k" style="color:var(--inv-muted)">Excluded</span></span></div></section>`;
   h += `<div class="chips" role="group" aria-label="Filter by area">${regs.map(r => `<button type="button" class="chip" data-act="region" data-k="${esc(r)}" aria-pressed="${S.bankRegion===r}">${r === 'all' ? 'All areas' : esc(r)}<span class="n">${r==='all' ? all.length : all.filter(b => b.reg===r).length}</span></button>`).join('')}</div>`;
