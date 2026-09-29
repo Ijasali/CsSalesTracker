@@ -9,7 +9,7 @@ Google Sheets are not used.
 
 | Screen | Reads |
 |---|---|
-| Today | For you to do (`planned_actions` pending_approval / held, conversations due with no draft), going out at the next 9:30 am send (approved replies/follow-ups + that day's cold batch from `outreach_schedule`), replies in the last 7 days, this week's numbers, and the last run of each Claude task (`agent_runs`, `sync_state`) |
+| Today (home) | One results card with a Today / This week / This month / All time switch: emails sent (`messages` outbound), hot leads (schools whose first inbound message falls in the period) and replies, meetings and proposals (first `activities` of kind meeting / proposal_sent or a “Stage → Meeting/Proposal” change; all time also counts schools currently at that stage). Lead list: total schools, contacted (`emails_sent > 0`), never contacted, ready for a first email, excluded. Claude’s tasks today: each routine’s state from `agent_runs` plus the routine itself (`list_triggers`), with Run now (`fire_trigger`). Website visits needs a Google Analytics connector. |
 | Pipeline | `schools` in stages engaged, meeting_booked, proposal_sent, client (or with replies), their `contacts`, and the latest `messages`. Follow-ups = our emails after the school's first reply. |
 | Lead detail | `school_timeline` (emails + activities) and `messages` |
 | Review → Prepare drafts now | Finds conversations needing an email (same rules as Evening Prep Step 3: unanswered replies in `awaiting_our_reply`, and `managed_by_ijas` schools whose `next_action_date` is due or with no email from us in 10+ days, skipping any with an active `planned_actions` row). Claude drafts each; a Gmail draft and a `planned_actions` row (`pending_approval`) are created. |
@@ -87,5 +87,6 @@ Because every agent reads the same tables, no routine changes are needed.
 ## Connectors used
 
 - Supabase: `execute_sql`
+- Claude Code Remote: `list_triggers`, `fire_trigger` (task status and Run now)
 - Gmail: `search_threads`, `get_thread`, `reply`, `create_draft`, `send_message`, `update_draft`
 - Claude drafting (the artifact `sample` capability), billed to the viewer's Claude plan

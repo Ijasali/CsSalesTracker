@@ -177,7 +177,14 @@ const CFG = {
   project: 'abylyjqplyxrpexwyufi',
   tz: 'America/Toronto',
   gmail: 'Gmail',
-  supabase: 'Supabase'
+  supabase: 'Supabase',
+  routines: 'Claude Code Remote',
+  tasks: [
+    {agent:'lead_finder', trigger:'trig_01QJmbGhzJ7kNSJbVMwByRw3', name:'Lead finder', what:'Finds 15 new schools', at:'6:00 pm', days:'daily'},
+    {agent:'morning_sender', trigger:'trig_019SvdjzzNrpXVvqeqih1CeZ', name:'Morning sender', what:'Sends approved emails', at:'9:30 am', days:'weekdays'},
+    {agent:'evening_prep', trigger:'trig_01TA7DvFuqvT9scHVcYYENHp', name:'Evening prep', what:'Syncs Gmail, drafts replies and the next cold batch', at:'8:00 pm', days:'daily'},
+    {agent:'backup', trigger:'trig_01NafucJDTjfbZkhKWco1YuQ', name:'Nightly backup', what:'Copies the database to Google Drive', at:'11:10 pm', days:'daily'}
+  ]
 };
 
 /* stages exactly as the database stores them */
@@ -253,7 +260,7 @@ const S = {
   gmailNew: {},                      // school id -> newest Gmail message not yet synced
   err: {}, busy: {},
   pipeFilter:'all', bankRegion:'all', bankSel:new Set(), weekTab:'next', sched: lsGet('sched', null), extra:{}, openDays:new Set(), batchKey:null, tpl: lsGet('tpl', {}),
-  confirmBank:'', todo: lsGet('todo', null), reviewOpen:false, confirmReject:null,
+  confirmBank:'', home: lsGet('home', null), period: lsGet('period','today'), routines:null, taskSheet:null, todo: lsGet('todo', null), reviewOpen:false, confirmReject:null,
   lead:null, composer:null, modal:null
 };
 
@@ -275,7 +282,7 @@ function errText(e, server){
   if(c === 'server_unavailable' || c === 'upstream_error') return `Couldn't reach ${s} just now. Tap Refresh to try again.`;
   return (e && e.message) ? e.message : `Something went wrong talking to ${s}.`;
 }
-const WRITES = ['reply','send_message','create_draft'];
+const WRITES = ['reply','send_message','create_draft','update_draft','fire_trigger'];
 async function call(server, tool, input, retry){
   try {
     const r = await S.mcp.callTool(server, tool, input, {cache:false});
@@ -388,6 +395,49 @@ async function loadSchools(){
 async function loadStats(){
   try { const r = await sql(Q_STATS); S.stats = (r[0] && r[0].j) || null; lsSet('stats', S.stats); delete S.err.stats; }
   catch(e){ S.err.stats = errText(e, CFG.supabase); }
+  render();
+}
+const Q_HOME = `
+with b as (select (now() at time zone 'America/Toronto')::date as d),
+r as (select k, case k when 'today' then b.d when 'week' then b.d - (extract(isodow from b.d)::int - 1) when 'month' then date_trunc('month', b.d)::date else date '1900-01-01' end as since
+      from b, (values ('today'),('week'),('month'),('all')) v(k)),
+firstin as (select school_id, min(sent_at) as at from messages where direction = 'inbound' and school_id is not null group by 1),
+mt as (select school_id, min(occurred_at) as at from activities where kind = 'meeting' or summary ilike 'Stage → Meeting%' group by 1),
+pr as (select school_id, min(occurred_at) as at from activities where kind = 'proposal_sent' or summary ilike 'Stage → Proposal%' group by 1)
+select json_build_object(
+ 'periods', (select json_object_agg(r.k, json_build_object(
+   'sent', (select count(*) from messages m where m.direction = 'outbound' and (m.sent_at at time zone 'America/Toronto')::date >= r.since),
+   'replies', (select count(*) from messages m where m.direction = 'inbound' and (m.sent_at at time zone 'America/Toronto')::date >= r.since),
+   'hot', (select count(*) from firstin f where (f.at at time zone 'America/Toronto')::date >= r.since),
+   'meetings', (select count(*) from mt where (mt.at at time zone 'America/Toronto')::date >= r.since)
+      + case when r.k = 'all' then (select count(*) from schools s where s.stage = 'meeting_booked' and s.id not in (select school_id from mt)) else 0 end,
+   'proposals', (select count(*) from pr where (pr.at at time zone 'America/Toronto')::date >= r.since)
+      + case when r.k = 'all' then (select count(*) from schools s where s.stage = 'proposal_sent' and s.id not in (select school_id from pr)) else 0 end)) from r),
+ 'leads', json_build_object(
+   'total', (select count(*) from schools),
+   'never', (select count(*) from schools where emails_sent = 0 and not do_not_contact and stage not in ('do_not_contact','bounced','no_email')),
+   'contacted', (select count(*) from schools where emails_sent > 0),
+   'ready', (select count(*) from outreach_due where next_touch = 1),
+   'excluded', (select count(*) from schools where do_not_contact or casa_only or stage in ('do_not_contact','bounced','no_email')),
+   'added_today', (select count(*) from schools, b where 'lead_finder' = any(sources) and (created_at at time zone 'America/Toronto')::date = b.d)),
+ 'today', json_build_object(
+   'sent_cold', (select count(*) from planned_actions, b where status = 'sent' and kind = 'cold_auto' and (sent_at at time zone 'America/Toronto')::date = b.d),
+   'sent_reply', (select count(*) from planned_actions, b where status = 'sent' and kind <> 'cold_auto' and (sent_at at time zone 'America/Toronto')::date = b.d),
+   'prep_review', (select count(*) from planned_actions, b where created_by = 'evening_prep' and kind <> 'cold_auto' and (created_at at time zone 'America/Toronto')::date = b.d),
+   'prep_cold', (select count(*) from planned_actions, b where created_by = 'evening_prep' and kind = 'cold_auto' and (created_at at time zone 'America/Toronto')::date = b.d),
+   'runs', (select coalesce(json_agg(x order by x.started_at desc), '[]') from (select agent, started_at, finished_at, outcome, left(summary, 600) as summary from agent_runs, b where (started_at at time zone 'America/Toronto')::date = b.d) x))
+) as j`;
+async function loadHome(){
+  S.busy.home = true; delete S.err.home; render();
+  try { const r = await sql(Q_HOME); S.home = (r[0] && r[0].j) || null; lsSet('home', S.home); }
+  catch(e){ S.err.home = errText(e, CFG.supabase); }
+  S.busy.home = false; render();
+}
+/* the Claude routines themselves: next run time, last run status, and "Run now" */
+async function loadRoutines(){
+  try { const res = await call(CFG.routines, 'list_triggers', {limit:50});
+    S.routines = (res && res.data) || []; delete S.err.routines; }
+  catch(e){ S.routines = null; S.err.routines = e && ['not_in_manifest','server_not_connected','selection_required','not_granted','capability_disabled'].includes(e.code) ? 'offline' : errText(e, 'Claude routines'); }
   render();
 }
 async function loadTodo(){
@@ -695,6 +745,7 @@ async function syncGmail(){
     if(runId) sql(`update agent_runs set finished_at = now(), outcome = 'ok', summary = ${lit('App sync: ' + summary + (unmatchedOut.length ? '. Unmatched: ' + unmatchedOut.map(m => m.to[0] + ' "' + m.subject + '"').join('; ') : ''))} where id = ${runId} returning id`, true).catch(() => {});
     S.sync = {running:false, done:new Date().toISOString(), result:summary, unmatched:unmatchedOut};
     S.gmailNew = {};
+    loadHome();
   } catch(e){
     const msg = errText(e, e && e.server) ;
     if(runId) sql(`update agent_runs set finished_at = now(), outcome = 'error', summary = ${lit('App sync failed: ' + msg)} where id = ${runId} returning id`, true).catch(() => {});
@@ -774,95 +825,93 @@ function syncLine(){
 
 function viewToday(){
   const today = new Date().toLocaleDateString('en-US',{timeZone:CFG.tz, weekday:'long', day:'numeric', month:'short'});
-  const ls = leads(); const todo = S.todo || [];
-  const pend = todo.filter(t => t.status === 'pending_approval');
-  const approved = todo.filter(t => t.status === 'approved');
-  const held = todo.filter(t => t.status === 'held');
-  const due = S.due || [];
-  const hasDraft = id => todo.some(t => t.school_id === id);
-  const newReplies = ls.filter(l => l.lastIn && daysSince(l.lastIn.at) <= 7).sort((a,b) => String(b.lastIn.at).localeCompare(String(a.lastIn.at)));
-  const unanswered = ls.filter(l => l.waiting && !hasDraft(l.id));
-  const actionN = pend.length + held.length + (due.length || unanswered.length ? 1 : 0);
-  const run = nextSendRun();
-  const coldNext = (S.sched||[]).filter(r => r.send_date === run);
-  const wk = S.week && S.week.week === WEEK0 ? S.week.rows : [];
-  const sentWeek = wk.reduce((n,r) => n + (+r.sent_week||0), 0);
-  const repliesWeek = ls.filter(l => l.lastIn && dayOf(l.lastIn.at) >= WEEK0).length;
-
-  let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><div class="eyebrow">Cyber Square · Sales</div><h1>${esc(today)}</h1>
-    <div class="sub">${S.busy.schools && !S.schools ? 'Loading…' : actionN ? `${actionN} thing${actionN>1?'s':''} for you to do` : 'Nothing needs you right now'}</div></div>${syncButton()}</header>`;
+  const H = S.home; const pend = pendingTodo().length;
+  let h = `<header class="between" style="align-items:flex-start"><div class="stack" style="gap:6px"><div class="eyebrow">Cyber Square · Sales</div><h1>${esc(today)}</h1></div>${syncButton()}</header>`;
   h += syncStatus();
-  h += sectionErr('schools','stats','todo');
+  h += sectionErr('home','todo');
+  if(pend) h += `<button type="button" class="tap" data-act="openreview" style="border:2px solid var(--accent);padding:12px 14px"><span class="ico" style="width:34px;height:34px;background:var(--bad-bg);color:var(--bad-fg)">${svg('check',18)}</span>
+      <span class="stack" style="gap:0;flex:1"><span class="b">${pend} email${pend>1?'s':''} waiting for your approval</span><span class="xs muted">Tap to review · nothing sends until you approve</span></span>${svg('chev',18,2)}</button>`;
 
-  /* 1. what only you can do */
-  h += `<section class="stack"><h2 class="sec">For you to do</h2>`;
-  if(pend.length){
-    h += `<button type="button" class="tap" data-act="openreview" style="border:2px solid var(--accent)"><span class="ico" style="background:var(--bad-bg);color:var(--bad-fg)">${svg('check')}</span>
-      <span class="stack" style="gap:3px;flex:1;min-width:0"><span class="between"><span class="b">Approve ${pend.length} email${pend.length>1?'s':''}</span>${approvalBadge('pending_approval')}</span>
-      <span class="small muted clamp2">${esc(pend.slice(0,4).map(t => t.school).join(', '))}${pend.length > 4 ? ' and more' : ''}</span>
-      <span class="xs muted">Drafted by Claude. Approve before 9:30 am to send ${esc(dayLabel(run).toLowerCase())}.</span></span>${svg('chev',18,2)}</button>`;
-  }
-  if(held.length) h += `<button type="button" class="tap" data-act="openreview"><span class="ico" style="background:var(--neutral-bg);color:var(--neutral-fg)">${svg('alert')}</span>
-      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="b">${held.length} held email${held.length>1?'s':''} to re-check</span><span class="small muted clamp2">${esc(held.map(t => t.school).join(', '))}</span></span>${svg('chev',18,2)}</button>`;
-  const noDraft = due.length || unanswered.length;
-  if(noDraft){
-    const names = [...new Set([...unanswered.map(l => l.school), ...due.map(x => ((S.schools||[]).find(sc => sc.id === x.id) || {}).school || x.id)])];
-    const p = S.prep || {};
-    h += `<div class="card stack" style="gap:10px"><div class="row" style="align-items:flex-start"><span class="ico" style="background:var(--claude-soft);color:var(--claude)">${svg('spark')}</span>
-      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="b">${names.length} conversation${names.length>1?'s':''} need an email, no draft yet</span><span class="small muted clamp2">${esc(names.slice(0,4).join(', '))}${names.length > 4 ? ' and more' : ''}</span></span></div>
-      <button type="button" class="btn accent full" data-act="prepare" ${p.running || !S.sample ? 'disabled' : ''}>${p.running ? '<span class="spin"></span> ' + esc(p.step) : svg('spark',16) + ' Draft them with Claude'}</button>
-      ${p.result ? `<div class="xs" style="color:var(--won-fg)">${esc(p.result)}</div>` : ''}<span class="xs muted">Or wait: Claude’s evening prep drafts them at 8 pm.</span></div>`;
-  }
-  if(!pend.length && !held.length && !noDraft) h += (S.busy.todo && !S.todo ? skel(1) : `<div class="card empty">You’re all caught up. Claude will put new drafts here for your approval.</div>`);
+  /* 1. performance, one card with a period switch */
+  const periods = [['today','Today'],['week','This week'],['month','This month'],['all','All time']];
+  const P = H && H.periods && H.periods[S.period];
+  h += `<section class="card stack" style="gap:12px"><div class="seg" role="tablist" aria-label="Period" style="grid-template-columns:repeat(4,minmax(0,1fr))">${periods.map(([k,l]) =>
+      `<button type="button" role="tab" data-act="period" data-k="${k}" aria-selected="${S.period===k}" style="font-size:13px">${l}</button>`).join('')}</div>`;
+  if(!P) h += S.busy.home ? `<div class="grid2">${skel(4)}</div>` : '';
+  else h += `<div class="grid2">
+      <div class="stat"><span class="k">Emails sent</span><span class="v">${P.sent}</span></div>
+      <div class="stat"><span class="k">Hot leads</span><span class="v" style="color:var(--replied-fg)">${P.hot}</span><span class="xs muted">${P.replies} repl${P.replies === 1 ? 'y' : 'ies'} received</span></div>
+      <div class="stat"><span class="k">Meetings</span><span class="v" style="color:var(--meeting-fg)">${P.meetings}</span></div>
+      <div class="stat"><span class="k">Proposals</span><span class="v" style="color:var(--proposal-fg)">${P.proposals}</span></div></div>
+    <div class="xs muted">A lead turns hot the first time a school replies. ${({today:'Since midnight', week:'Since Monday', month:'Since the 1st', all:'Everything on record'})[S.period]}.</div>`;
   h += `</section>`;
 
-  /* 2. what goes out next, automatically */
-  h += `<section class="stack"><h2 class="sec">Going out ${esc(dayLabel(run).toLowerCase())} · 9:30 am</h2>`;
-  h += `<button type="button" class="tap" data-act="openreview"><span class="ico" style="background:var(--won-bg);color:var(--won-fg)">${svg('reply')}</span>
-      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b">${approved.length} repl${approved.length === 1 ? 'y' : 'ies'} & follow-up${approved.length === 1 ? '' : 's'}</span>${approvalBadge('approved','reply')}</span>
-      <span class="small muted clamp2">${approved.length ? esc(approved.slice(0,4).map(t => t.school).join(', ')) : 'Nothing approved yet'}</span></span>${svg('chev',18,2)}</button>`;
-  h += `<button type="button" class="tap" data-act="tab" data-k="outreach"><span class="ico" style="background:var(--replied-bg);color:var(--replied-fg)">${svg('send')}</span>
-      <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b">${coldNext.length} cold email${coldNext.length === 1 ? '' : 's'}</span>${approvalBadge('approved','cold_auto')}</span>
-      <span class="small muted">${coldNext.length ? `${coldNext.filter(r => r.touch == 1).length} first emails · ${coldNext.filter(r => r.touch > 1).length} follow-ups` : 'No cold batch planned for this send'}</span></span>${svg('chev',18,2)}</button>`;
-  h += `</section>`;
+  /* 2. lead list */
+  const L = H && H.leads;
+  if(L){ const pc = L.total ? Math.round(L.contacted / L.total * 100) : 0;
+    h += `<button type="button" class="card stack" data-act="tab" data-k="bank" style="gap:10px"><div class="between"><span class="b">Lead list</span><span class="xs muted">${L.total} schools ${svg('chev',14,2)}</span></div>
+      <div class="bar" style="height:10px"><span style="width:${pc}%;background:var(--replied-fg)"></span><span style="width:${100-pc}%;background:var(--faint)"></span></div>
+      <div class="grid3" style="text-align:left">
+        <span class="stack" style="gap:0"><b class="mono" style="font-size:20px">${L.total}</b><span class="xs muted">In the lead list</span></span>
+        <span class="stack" style="gap:0"><b class="mono" style="font-size:20px;color:var(--replied-fg)">${L.contacted}</b><span class="xs muted">Contacted so far</span></span>
+        <span class="stack" style="gap:0"><b class="mono" style="font-size:20px">${L.never}</b><span class="xs muted">Never contacted</span></span></div>
+      <span class="xs muted">${L.ready} ready for a first email · ${L.excluded} excluded (do not contact, bounced, Casa only)</span></button>`; }
 
-  /* 3. what came in */
-  h += `<section class="stack"><h2 class="sec">Replies in the last 7 days</h2>`;
-  if(!newReplies.length) h += `<div class="card empty">No new replies from schools this week.</div>`;
-  else h += `<div class="list">` + newReplies.slice(0,6).map(l => { const t = todo.find(x => x.school_id === l.id);
-      const state = t ? approvalBadge(t.status, t.kind) : l.waiting ? `<span class="pill" style="background:var(--proposal-bg);color:var(--proposal-fg)">No draft yet</span>` : `<span class="pill" style="background:var(--neutral-bg);color:var(--neutral-fg)">Answered</span>`;
-      return `<button type="button" class="row" data-act="lead" data-k="${esc(l.key)}" style="width:100%;text-align:left;border:none;background:var(--surface);padding:12px 16px;gap:12px;align-items:flex-start">
-        <span class="stack" style="gap:2px;flex:1;min-width:0"><span class="between"><span class="b small">${esc(l.school)}</span><span class="xs muted">${esc(rel(l.lastIn.at))}</span></span>
-        <span class="small muted clamp2">“${esc(String(l.lastIn.text||'').slice(0,140))}”</span></span>${state}</button>`; }).join('') + `</div>`;
-  h += `</section>`;
-
-  /* 4. the week in numbers */
-  h += `<section class="stack"><h2 class="sec">This week</h2><div class="grid4">
-    <div class="stat"><span class="v">${sentWeek}</span><span class="k">Cold sent</span></div>
-    <div class="stat"><span class="v" style="color:var(--replied-fg)">${repliesWeek}</span><span class="k">Replies</span></div>
-    <div class="stat"><span class="v" style="color:var(--meeting-fg)">${stageCount('meeting_booked')}</span><span class="k">Meetings</span></div>
-    <div class="stat"><span class="v" style="color:var(--proposal-fg)">${stageCount('proposal_sent')}</span><span class="k">Proposals</span></div></div>
-    <button type="button" class="btn full" data-act="tab" data-k="bank">${svg('db',16)} ${(S.bank||[]).length} schools waiting in the Lead Bank</button></section>`;
-
-  /* 5. are the Claude tasks running */
-  h += agentStatus();
+  /* 3. Claude's tasks today */
+  h += tasksToday();
   return h;
 }
-function agentStatus(){
-  const st = S.stats; if(!st) return '';
-  const runs = st.runs || []; const get = a => runs.find(r => r.agent === a);
-  const rows = [
-    ['Evening prep', 'Drafts approvals + cold batch · daily 8 pm', get('evening_prep') || get('evening_review')],
-    ['Morning sender', 'Sends approved emails · weekdays 9:30 am', get('morning_sender')],
-    ['Lead finder', 'Adds new schools · daily 6 pm', get('lead_finder')],
-    ['Gmail sync', 'Last synced into the database', {started_at: st.synced, outcome:'ok'}]
-  ];
-  return `<section class="stack"><h2 class="sec">Claude’s tasks</h2><div class="list">` + rows.map(([name, what, r]) => {
-    const ok = r && r.started_at && (!r.outcome || /^(ok|success|done|completed)/i.test(r.outcome));
-    const bad = r && r.outcome && !ok; const never = !r || !r.started_at;
-    const key = never ? 'neutral' : bad ? 'bad' : 'won';
-    return `<div class="between" style="padding:12px 16px"><span class="stack" style="gap:0;min-width:0"><span class="b small">${name}</span><span class="xs muted">${what}</span></span>
-      <span class="pill" style="background:var(--${key}-bg);color:var(--${key}-fg)">${never ? 'Not run yet' : bad ? 'Problem ' + esc(rel(r.started_at)) : esc(rel(r.started_at))}</span></div>`; }).join('') + `</div></section>`;
+function taskState(t){
+  const H = S.home || {}; const T = H.today || {}; const runs = (T.runs || []).filter(r => r.agent === t.agent || (t.agent === 'evening_prep' && r.agent === 'evening_review'));
+  const run = runs[0]; const rt = (S.routines || []).find(x => x.id === t.trigger) || null;
+  const lr = rt && rt.last_run; const lrToday = lr && lr.fired_at && dayOf(lr.fired_at) === TODAY;
+  const weekend = ['Sat','Sun'].includes(tzParts(new Date()).weekday);
+  const nextAt = rt && rt.next_run_at ? fmtTime(rt.next_run_at) : t.at;
+  if(rt && !rt.enabled) return {icon:'alert', key:'bad', label:'Turned off', detail:'This task is switched off, so it won’t run.', rt, run};
+  if(lrToday && lr.status === 'ROUTINE_RUN_STATUS_FAILED' && !(run && run.finished_at && /^(ok|success)/i.test(run.outcome||'')))
+    return {icon:'alert', key:'bad', label:'Failed', detail:`It started at ${fmtTime(lr.fired_at)} and stopped before finishing${run && run.summary ? ': ' + run.summary : '.'}`, rt, run};
+  if(run && run.outcome && !/^(ok|success|done|completed)/i.test(run.outcome)) return {icon:'alert', key:'bad', label:'Problem', detail: run.summary || run.outcome, rt, run};
+  if(run && !run.finished_at) return {icon:'clock', key:'proposal', label:'Running', detail:`Started ${fmtTime(run.started_at)}`, rt, run};
+  if(run && run.finished_at){
+    const d = t.agent === 'lead_finder' ? `${H.leads ? H.leads.added_today : '?'} leads added` :
+      t.agent === 'morning_sender' ? `${(T.sent_cold||0) + (T.sent_reply||0)} sent · ${T.sent_reply||0} approved replies, ${T.sent_cold||0} cold` :
+      t.agent === 'evening_prep' ? `${T.prep_review||0} drafts for review · ${T.prep_cold||0} cold emails queued` : 'Done';
+    return {icon:'check', key:'won', label:`Done ${fmtTime(run.finished_at)}`, detail:d, rt, run};
+  }
+  if(t.days === 'weekdays' && weekend) return {icon:'clock', key:'neutral', label:'Not today', detail:'Runs Monday to Friday', rt, run};
+  return {icon:'clock', key:'neutral', label:`Runs ${nextAt}`, detail:t.what, rt, run};
+}
+function tasksToday(){
+  let h = `<section class="stack" style="gap:8px"><div class="between"><h2 class="sec">Claude’s tasks today</h2>${S.err.routines === 'offline' ? '<span class="xs muted">run status from the database</span>' : ''}</div><div class="list">`;
+  CFG.tasks.forEach(t => { const st = taskState(t);
+    h += `<button type="button" class="row" data-act="task" data-k="${t.agent}" style="width:100%;text-align:left;border:none;background:var(--surface);padding:12px 16px;gap:12px">
+      <span class="ico" style="width:32px;height:32px;border-radius:999px;background:var(--${st.key}-bg);color:var(--${st.key}-fg)">${svg(st.icon,16,2.2)}</span>
+      <span class="stack" style="gap:0;flex:1;min-width:0"><span class="b small">${t.name}</span><span class="xs muted clamp2">${esc(st.detail)}</span></span>
+      <span class="xs b" style="color:var(--${st.key === 'neutral' ? 'muted' : st.key + '-fg'});white-space:nowrap">${esc(st.label)}</span></button>`; });
+  h += `<div class="row" style="padding:12px 16px;gap:12px"><span class="ico" style="width:32px;height:32px;border-radius:999px;background:var(--neutral-bg);color:var(--neutral-fg)">${svg('ext',16,2)}</span>
+      <span class="stack" style="gap:0;flex:1;min-width:0"><span class="b small">Website visits today</span><span class="xs muted">Shows here once a Google Analytics connector is added</span></span><span class="xs b muted">Not connected</span></div>`;
+  return h + `</div></section>`;
+}
+function overlayTask(){
+  const t = CFG.tasks.find(x => x.agent === S.taskSheet); if(!t) return '';
+  const st = taskState(t); const rt = st.rt; const busy = S.busy.fire;
+  const lines = [];
+  if(st.run) lines.push(['Last run', `${fmtDay(st.run.started_at)} ${fmtTime(st.run.started_at)}${st.run.finished_at ? ' → ' + fmtTime(st.run.finished_at) : ' (still running)'}`]);
+  if(rt && rt.last_run) lines.push(['Last trigger', `${cap(String(rt.last_run.status||'').replace('ROUTINE_RUN_STATUS_','').toLowerCase())} · ${fmtDay(rt.last_run.fired_at)} ${fmtTime(rt.last_run.fired_at)}`]);
+  lines.push(['Next run', rt && rt.next_run_at ? `${fmtDay(rt.next_run_at)} ${fmtTime(rt.next_run_at)}` : `${t.at} (${t.days})`]);
+  const bad = st.key === 'bad';
+  return `<div class="sheet-wrap"><div class="scrim" data-act="closeov"></div><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="ts-t">
+    <div class="grab"><i></i></div><div class="hd"><h2 id="ts-t" style="margin:0;font-size:17px;flex:1">${t.name}</h2><button type="button" class="iconbtn" style="border:none" data-act="closeov" aria-label="Close">${svg('x',20,2)}</button></div>
+    <div class="bd">
+      <div class="banner ${bad ? 'err' : st.key === 'won' ? 'info' : 'info'}">${svg(st.icon,18)}<span><b>${esc(st.label)}.</b> ${esc(st.detail)}</span></div>
+      <div class="list">${lines.map(([k,v]) => `<div class="kv" style="padding:10px 14px"><span style="width:96px">${esc(k)}</span><span>${esc(v)}</span></div>`).join('')}</div>
+      <div class="small muted">${esc(t.what)} · ${t.days === 'daily' ? 'every day' : 'Monday to Friday'} at ${t.at} Toronto time.</div>
+      ${bad ? `<div class="small" style="color:var(--ink-2)">Common fixes: if the problem mentions Gmail, Supabase or Google Drive, reconnect that connector in claude.ai → Settings → Connectors. If it stopped for no clear reason, run it again below.</div>` : ''}
+      ${S.err.fire ? `<div class="banner err">${svg('alert',18)}<span>${esc(S.err.fire)}</span></div>` : ''}
+    </div>
+    <div class="ft">${S.err.routines === 'offline' ? `<div class="xs muted">To run tasks from here, allow the Claude routines connection for this page. Until then, ask Claude in chat to run “${t.name}”.</div>` :
+      `<button type="button" class="btn ${bad ? 'primary' : ''} full" data-act="firetask" data-k="${t.agent}" ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span> Starting' : svg('refresh',16,2) + (bad ? ' Run it again now' : ' Run now')}</button>
+       <div class="xs muted">${t.agent === 'morning_sender' ? 'Runs send every approved email immediately.' : t.agent === 'evening_prep' ? 'A run drafts for the next send day and emails you the digest.' : 'Safe to run any time.'}</div>`}</div></section></div>`;
 }
 function touchMix(items){ const m = {}; items.forEach(i => { const k = 'Touch ' + (i.touch || '?'); m[k] = (m[k]||0)+1; }); return Object.entries(m).sort().map(([k,v]) => `${v} ${k}`).join(' · '); }
 function leadTap(l, key, icon, label, when, text){
@@ -1158,6 +1207,7 @@ function renderOverlay(){
   const o = $('#overlay');
   if(S.composer) return o.innerHTML = overlayComposer();
   if(S.modal) return o.innerHTML = overlayModal();
+  if(S.taskSheet) return o.innerHTML = overlayTask();
   o.innerHTML = '';
 }
 function overlayComposer(){
@@ -1373,7 +1423,7 @@ document.addEventListener('click', async ev => {
     case 'back': S.lead = null; render(); break;
     case 'reloadlead': if(S.lead){ loadSchools(); if(S.extra[S.lead]) loadOne(S.lead); loadDetail(S.lead); } break;
     case 'compose': { const l = findSchool(S.lead); if(!l) break; const open = (S.todo||[]).find(t => t.school_id === l.id && ['pending_approval','held','approved'].includes(t.status)); openComposer(l, open); } break;
-    case 'closeov': S.composer = null; S.modal = null; render(); break;
+    case 'closeov': S.composer = null; S.modal = null; S.taskSheet = null; delete S.err.fire; render(); break;
     case 'ver': { const c = S.composer; c.idx = Math.max(0, Math.min(c.versions.length-1, c.idx + (+k))); c.confirm = false; render(); } break;
     case 'hint': { const c = S.composer; c.ask = (document.getElementById('cmp-ask')||{}).value || c.ask; c.hint = c.hint === k ? '' : k; render(); } break;
     case 'regen': { const c = S.composer; c.ask = (document.getElementById('cmp-ask')||{}).value || ''; draft(true); } break;
@@ -1386,6 +1436,13 @@ document.addEventListener('click', async ev => {
         S.composer = null; toast(act === 'saveapprove' ? `Approved · sends ${dayLabel(nextSendRun())} 9:30 am` : 'Saved · still needs review'); await loadTodo(); }
       catch(e){ c.busy = false; c.error = 'Not saved. ' + errText(e, CFG.supabase); render(); } } break;
     case 'prepare': prepareDrafts(); break;
+    case 'period': S.period = k; lsSet('period', k); render(); break;
+    case 'task': S.taskSheet = k; delete S.err.fire; render(); break;
+    case 'firetask': { const t = CFG.tasks.find(x => x.agent === k); if(!t) break;
+      S.busy.fire = true; delete S.err.fire; render();
+      try { await call(CFG.routines, 'fire_trigger', {trigger_id:t.trigger, text:'Started by hand from the CS Tracker app.'}, false); S.taskSheet = null; toast(`${t.name} started · it takes a few minutes`); setTimeout(() => { loadRoutines(); loadHome(); }, 20000); }
+      catch(e){ S.err.fire = 'Couldn’t start it. ' + errText(e, 'Claude routines'); }
+      S.busy.fire = false; render(); } break;
     case 'queuereview': case 'queueapprove': queueEmail(act === 'queueapprove'); break;
     case 'stage': case 'note': { const l = findSchool(S.lead); if(l){ S.modal = {kind:act, lead:l}; render(); } } break;
     case 'savemodal': {
@@ -1414,12 +1471,12 @@ document.addEventListener('input', ev => {
   if(ev.target.id === 'cmp-ask' && S.composer) S.composer.ask = ev.target.value;
 });
 document.addEventListener('submit', ev => ev.preventDefault());
-document.addEventListener('keydown', ev => { if(ev.key === 'Escape' && (S.composer || S.modal)){ S.composer = null; S.modal = null; render(); } });
+document.addEventListener('keydown', ev => { if(ev.key === 'Escape' && (S.composer || S.modal || S.taskSheet)){ S.composer = null; S.modal = null; S.taskSheet = null; render(); } });
 
 /* ---------- boot ---------- */
 async function refreshAll(){
   if(!S.mcp) return;
-  await Promise.allSettled([loadSchools(), loadStats(), loadTodo(), loadDue(), loadBatch(), loadSchedule(), loadWeek(), loadBank()]);
+  await Promise.allSettled([loadHome(), loadRoutines(), loadSchools(), loadStats(), loadTodo(), loadDue(), loadBatch(), loadSchedule(), loadWeek(), loadBank()]);
   checkGmailSinceSync();
   if(S.lead) loadDetail(S.lead);
 }
