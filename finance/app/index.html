@@ -405,7 +405,7 @@ document.addEventListener('visibilitychange', () => {
 });
 async function refreshAll(){
   S.loadedAt = Date.now();
-  S.net = null; delete S.err.net;
+  S.net = null; S.netTx = null; delete S.err.net;
   await loadBoot();
   if(!S.boot) return;
   await Promise.all([loadMonth(S.month), loadRecent()]);
@@ -703,6 +703,14 @@ function viewInsights(){
   return h + `</main>`;
 }
 
+// The transactions behind the tapped bar, shown right under the chart.
+function txListCard(list, m, total){
+  const head = `<div class="row sp" style="padding-top:10px"><h2>${esc(mLabel(m))}</h2>${list ? `<span class="xs muted">${list.length} transaction${list.length === 1 ? '' : 's'}${total != null ? ' · ' + cad(total) : ''}</span>` : ''}</div>`;
+  if(!list) return `<section class="card tight" aria-live="polite">${head}<div class="skel">Loading…</div></section>`;
+  if(!list.length) return `<section class="card tight" aria-live="polite">${head}<div class="skel">Nothing recorded this month.</div></section>`;
+  return `<section class="card tight" aria-live="polite">${head}<div class="list">${list.map(txRow).join('')}</div>${list.length >= 200 ? '<span class="xs muted" style="padding-bottom:10px">Showing the first 200.</span>' : ''}</section>`;
+}
+
 /* ---- net: income minus spending ---- */
 function viewNet(md){
   const inc = Number(md.income), sp = Number(md.spent), net = inc - sp;
@@ -717,7 +725,7 @@ function viewNet(md){
   const maxP = Math.max(0, ...nets), maxN = Math.max(0, ...nets.map(v => -v));
   const H = 190, pad = 22, scale = (H - 2 * pad) / ((maxP + maxN) || 1), zero = pad + maxP * scale;
   const tot = rows.slice(-12).reduce((a, r) => ({i: a.i + Number(r.income), s: a.s + Number(r.spent)}), {i: 0, s: 0});
-  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Income minus spending since ${esc(mLabel(rows[0].m))}"><div class="row sp" style="padding:0 16px"><span class="sm b">Since ${esc(mShort(rows[0].m) + ' ' + rows[0].m.slice(0, 4))}</span><span class="xs muted">tap a month</span></div>
+  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Income minus spending since ${esc(mLabel(rows[0].m))}"><div class="row sp" style="padding:0 16px"><span class="sm b">Since ${esc(mShort(rows[0].m) + ' ' + rows[0].m.slice(0, 4))}</span><span class="xs muted">tap a bar for its transactions</span></div>
     <div class="row xs muted" style="padding:0 16px;gap:14px"><span><i class="key" style="background:var(--gain)"></i>Kept (income above spending)</span><span><i class="key" style="background:var(--loss)"></i>Overspent</span></div>
     <div class="chart"><div class="in" style="width:${rows.length * 52 + 16}px"><div class="nplot"><div class="nzero" style="top:${zero}px"></div>` +
     rows.map((r, i) => {
@@ -728,11 +736,15 @@ function viewNet(md){
     }).join('') +
     `</div><div class="mlab">${rows.map((r, i) => `<div class="${r.m === S.month ? 'on' : ''}">${mShort(r.m)}<small>${i === 0 || r.m.slice(5, 7) === '01' ? r.m.slice(0, 4) : ''}</small></div>`).join('')}</div></div></div>
     <div class="row sp sm" style="padding:0 16px"><span class="muted">Last 12 months: ${cad0(tot.i)} in, ${cad0(tot.s)} out</span><span class="b" style="white-space:nowrap">${tot.i - tot.s >= 0 ? '+' : '−'}${cad0(Math.abs(tot.i - tot.s))}</span></div></section>`;
+  const nt = S.netTx && S.netTx.m === S.month ? S.netTx.list : null;
+  if(!nt && !S.busy.nettx) setTimeout(loadNetTx);
+  h += txListCard(nt, S.month, null);
   h += `<section class="card tight"><table class="ntable"><caption class="sm b" style="text-align:left;padding:10px 0 4px">Last 12 months</caption><thead><tr><th scope="col">Month</th><th scope="col">Income</th><th scope="col">Spent</th><th scope="col">Net</th></tr></thead><tbody>` +
     rows.slice(-12).reverse().map(r => { const v = Number(r.income) - Number(r.spent); return `<tr class="${r.m === S.month ? 'on' : ''}"><td>${mShort(r.m)} ${r.m.slice(0, 4)}</td><td>${cad0(r.income)}</td><td>${cad0(r.spent)}</td><td class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${cad0(Math.abs(v))}</td></tr>`; }).join('') +
     `</tbody></table></section>`;
   return h;
 }
+const loadNetTx = () => load('nettx', async () => { const m = S.month; const list = (await api('app_txns', {month: m, kind: 'inout', counted: true})) || []; S.netTx = {m, list}; });
 const loadNet = () => load('net', async () => { S.netScrolled = false; S.net = await api('app_net', {end: monthOf(todayISO()), from: chartMonths(monthOf(todayISO()))[0]}); });
 
 /* ---- category history ---- */
@@ -750,11 +762,12 @@ function viewCat(){
   const max = Math.max(1, ...vals) * 1.18; const H = 150;
   const si = months.indexOf(c.sel); const cur = tot[c.sel] || 0; const prev = si > 0 ? vals[si - 1] : null;
   h += `<div class="row sp"><button class="icon-btn" data-act="catm" data-d="-1" aria-label="Previous month"${si <= 0 ? ' disabled' : ''}>${svg('left', 18)}</button><span class="b">${esc(mLabel(c.sel))}</span><button class="icon-btn" data-act="catm" data-d="1" aria-label="Next month"${si >= 11 ? ' disabled' : ''}>${svg('right', 18)}</button></div>`;
-  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Monthly totals since ${esc(mLabel(months[0]))}"><div class="row sp" style="padding:0 16px"><span class="sm b">Since ${esc(mShort(months[0]) + ' ' + months[0].slice(0, 4))}</span><span class="xs muted">swipe for earlier · tap a month</span></div>
+  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Monthly totals since ${esc(mLabel(months[0]))}"><div class="row sp" style="padding:0 16px"><span class="sm b">Since ${esc(mShort(months[0]) + ' ' + months[0].slice(0, 4))}</span><span class="xs muted">swipe for earlier · tap a bar</span></div>
     <div class="chart"><div class="in" style="width:${months.length * 52 + 16}px"><div class="plot"><div class="avg" style="bottom:${Math.round(avg / max * H)}px"></div>` +
     months.map((m, i) => `<button class="col" data-act="catsel" data-m="${m}" aria-pressed="${m === c.sel}" aria-label="${esc(mLabel(m))}: ${cad(vals[i])}"><span>${vals[i] ? short$(vals[i]) : ''}</span><i style="height:${Math.max(vals[i] ? 2 : 0, Math.round(vals[i] / max * H))}px"></i></button>`).join('') +
     `</div><div class="mlab">${months.map((m, i) => `<div class="${m === c.sel ? 'on' : ''}">${mShort(m)}<small>${i === 0 || m.slice(5, 7) === '01' ? m.slice(0, 4) : ''}</small></div>`).join('')}</div></div></div>
     <div class="row xs muted" style="padding:0 16px"><span aria-hidden="true" style="width:18px;border-top:1.5px dashed var(--avg)"></span><span>12-month average ${cad(avg)}</span></div></section>`;
+  h += txListCard(c.tx, c.sel, cur);
   const dstyle = v => c.kind === 'income' ? (v >= 0 ? 'pos' : 'neg') : (v > 0 ? 'neg' : 'pos');
   h += `<section class="tiles" style="gap:8px"><div class="mtile"><span class="k">${mShort(c.sel)} total</span><span class="v">${cad(cur)}</span></div>
     <div class="mtile"><span class="k">vs ${prev == null ? 'earlier' : mShort(months[si - 1])}</span><span class="v ${prev == null ? '' : dstyle(cur - prev)}">${prev == null ? '—' : cadS(cur - prev)}</span>${prev ? `<span class="xs muted">${(cur - prev >= 0 ? '+' : '−') + Math.abs((cur - prev) / prev * 100).toFixed(1)}%</span>` : ''}</div>
@@ -766,7 +779,6 @@ function viewCat(){
   const subs = Object.entries(bySub).sort((a, b) => b[1] - a[1]);
   h += `<section class="card tight"><div class="row sp" style="padding:10px 0 6px"><span class="sm muted b">${esc(name)}</span><span class="sm b">${cad(cur)}</span></div><div class="list">` +
     (subs.length ? subs.map(([sid, v]) => { const sc = cat(sid); const label = sc && sc.pid ? sc.name : 'General'; return `<div class="item" style="cursor:default;min-height:52px"><span class="pct">${cur ? Math.round(v / cur * 100) : 0}%</span><span class="grow sb" style="font-size:15px">${esc(label)}</span><span class="amt" style="font-size:15px">${cad(v)}</span></div>`; }).join('') : `<span class="skel">Nothing in ${esc(mLabel(c.sel))}.</span>`) + `</div></section>`;
-  if(c.tx && c.tx.length) h += `<section class="card tight"><div class="row sp" style="padding-top:10px"><h2>Transactions</h2><span class="xs muted">${c.tx.length}</span></div><div class="list">${c.tx.map(txRow).join('')}</div></section>`;
   return h + `</main>`;
 }
 
@@ -1028,7 +1040,7 @@ async function deleteTx(){
   } catch(e){ S.busy.edit = false; S.err.edit = errText(e); render(); }
 }
 function afterWrite(){
-  S.monthData = {};
+  S.monthData = {}; S.netTx = null;
   refreshAll();
   if(S.view === 'txns') loadTxns();
   if(S.view === 'cat') loadCat();
@@ -1221,7 +1233,7 @@ document.addEventListener('click', e => {
     case 'acctactive': setActive(el.dataset.id); break;
     case 'nweye': { const a = acct(el.dataset.id); if(a) setNetWorth([a.id], !a.nw); break; }
     case 'inskind': S.insKind = el.dataset.v; render(); break;
-    case 'netsel': setMonth(el.dataset.m); break;
+    case 'netsel': S.netTx = null; S.netScrolled = false; setMonth(el.dataset.m); break;
     case 'cat': if(el.dataset.cid) openCat(el.dataset.cid, el.dataset.k); break;
     case 'catsw': S.cat.cid = el.dataset.cid; S.cat.rows = null; S.cat.tx = null; S.cat.scrolled = false; render(); loadCat(); break;
     case 'catsel': S.cat.sel = el.dataset.m; S.cat.tx = null; render(); loadCatTx(); if(!S.monthData[S.cat.sel]) loadMonth(S.cat.sel); break;
