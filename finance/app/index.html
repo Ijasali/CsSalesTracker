@@ -405,7 +405,7 @@ document.addEventListener('visibilitychange', () => {
 });
 async function refreshAll(){
   S.loadedAt = Date.now();
-  S.net = null; S.netTx = null; delete S.err.net;
+  S.net = null; delete S.err.net;
   await loadBoot();
   if(!S.boot) return;
   await Promise.all([loadMonth(S.month), loadRecent()]);
@@ -436,7 +436,7 @@ function render(){
   else if(S.web && !S.user) body = viewLogin();
   else if(S.unlinked) body = viewUnlinked();
   else if(!S.boot) body = S.err.boot ? `<main>${hdr('Zasvia Finance')}${banner(S.err.boot, true)}<div class="row wrap"><button class="btn" data-act="reload">${svg('refresh', 18)} Try again</button>${S.web ? '<button class="btn" data-act="signout">Sign out</button>' : ''}</div></main>` : `<main>${hdr('Zasvia Finance')}<div class="skel">Loading your accounts…</div></main>`;
-  else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport, budlist: viewBudList, budyear: viewBudYear})[S.view](); }
+  else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport, budlist: viewBudList, budyear: viewBudYear, cattx: viewCatTx})[S.view](); }
   root.innerHTML = body + (app ? tabs() : '') + (S.sheet ? sheet() : '') + (S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : '');
   if(focus){ const el = document.getElementById(focus.id); if(el){ el.focus(); try { if(focus.s != null) el.setSelectionRange(focus.s, focus.s); } catch(e){} } }
   const ch = $('.chart');
@@ -703,14 +703,20 @@ function viewInsights(){
   return h + `</main>`;
 }
 
-// The transactions behind the tapped bar, shown right under the chart.
-function txListCard(list, m, total){
-  const head = `<div class="row sp" style="padding-top:10px"><h2>${esc(mLabel(m))}</h2>${list ? `<span class="xs muted">${list.length} transaction${list.length === 1 ? '' : 's'}${total != null ? ' · ' + cad(total) : ''}</span>` : ''}</div>`;
-  if(!list) return `<section class="card tight" aria-live="polite">${head}<div class="skel">Loading…</div></section>`;
-  if(!list.length) return `<section class="card tight" aria-live="polite">${head}<div class="skel">Nothing recorded this month.</div></section>`;
-  return `<section class="card tight" aria-live="polite">${head}<div class="list">${list.map(txRow).join('')}</div>${list.length >= 200 ? '<span class="xs muted" style="padding-bottom:10px">Showing the first 200.</span>' : ''}</section>`;
+// A separate page: the transactions behind the tapped category bar.
+function viewCatTx(){
+  const c = S.cat; const name = topName(c.cid);
+  const list = c.tx; const total = list ? list.reduce((t, x) => t + (c.kind === 'income' ? Number(x.amt) : -Number(x.amt)), 0) : 0;
+  let h = `<main>${hdr(name + ' · ' + mShort(c.sel) + ' ' + c.sel.slice(0, 4), c.kind === 'income' ? 'Income' : 'Spending', null, true)}`;
+  if(S.err.cat) h += banner(S.err.cat, true);
+  if(!list) return h + `<div class="skel">Loading…</div></main>`;
+  h += `<section class="card" style="gap:4px"><span class="sm muted sb">${list.length} transaction${list.length === 1 ? '' : 's'}</span><span class="big" style="font-size:34px">${cad(total)}</span></section>`;
+  if(!list.length) return h + `<div class="skel">Nothing recorded in ${esc(mLabel(c.sel))}.</div></main>`;
+  const days = {}; list.forEach(t => { (days[t.d] = days[t.d] || []).push(t); });
+  for(const d of Object.keys(days)) h += `<section class="card tight" style="gap:0"><div class="row sp xs muted b" style="padding:10px 0 4px"><span>${esc(dayLabel(d))}</span></div><div class="list">${days[d].map(txRow).join('')}</div></section>`;
+  if(list.length >= 200) h += `<span class="xs muted">Showing the first 200.</span>`;
+  return h + `</main>`;
 }
-
 /* ---- net: income minus spending ---- */
 function viewNet(md){
   const inc = Number(md.income), sp = Number(md.spent), net = inc - sp;
@@ -736,15 +742,11 @@ function viewNet(md){
     }).join('') +
     `</div><div class="mlab">${rows.map((r, i) => `<div class="${r.m === S.month ? 'on' : ''}">${mShort(r.m)}<small>${i === 0 || r.m.slice(5, 7) === '01' ? r.m.slice(0, 4) : ''}</small></div>`).join('')}</div></div></div>
     <div class="row sp sm" style="padding:0 16px"><span class="muted">Last 12 months: ${cad0(tot.i)} in, ${cad0(tot.s)} out</span><span class="b" style="white-space:nowrap">${tot.i - tot.s >= 0 ? '+' : '−'}${cad0(Math.abs(tot.i - tot.s))}</span></div></section>`;
-  const nt = S.netTx && S.netTx.m === S.month ? S.netTx.list : null;
-  if(!nt && !S.busy.nettx) setTimeout(loadNetTx);
-  h += txListCard(nt, S.month, null);
   h += `<section class="card tight"><table class="ntable"><caption class="sm b" style="text-align:left;padding:10px 0 4px">Last 12 months</caption><thead><tr><th scope="col">Month</th><th scope="col">Income</th><th scope="col">Spent</th><th scope="col">Net</th></tr></thead><tbody>` +
     rows.slice(-12).reverse().map(r => { const v = Number(r.income) - Number(r.spent); return `<tr class="${r.m === S.month ? 'on' : ''}"><td>${mShort(r.m)} ${r.m.slice(0, 4)}</td><td>${cad0(r.income)}</td><td>${cad0(r.spent)}</td><td class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${cad0(Math.abs(v))}</td></tr>`; }).join('') +
     `</tbody></table></section>`;
   return h;
 }
-const loadNetTx = () => load('nettx', async () => { const m = S.month; const list = (await api('app_txns', {month: m, kind: 'inout', counted: true})) || []; S.netTx = {m, list}; });
 const loadNet = () => load('net', async () => { S.netScrolled = false; S.net = await api('app_net', {end: monthOf(todayISO()), from: chartMonths(monthOf(todayISO()))[0]}); });
 
 /* ---- category history ---- */
@@ -767,7 +769,6 @@ function viewCat(){
     months.map((m, i) => `<button class="col" data-act="catsel" data-m="${m}" aria-pressed="${m === c.sel}" aria-label="${esc(mLabel(m))}: ${cad(vals[i])}"><span>${vals[i] ? short$(vals[i]) : ''}</span><i style="height:${Math.max(vals[i] ? 2 : 0, Math.round(vals[i] / max * H))}px"></i></button>`).join('') +
     `</div><div class="mlab">${months.map((m, i) => `<div class="${m === c.sel ? 'on' : ''}">${mShort(m)}<small>${i === 0 || m.slice(5, 7) === '01' ? m.slice(0, 4) : ''}</small></div>`).join('')}</div></div></div>
     <div class="row xs muted" style="padding:0 16px"><span aria-hidden="true" style="width:18px;border-top:1.5px dashed var(--avg)"></span><span>12-month average ${cad(avg)}</span></div></section>`;
-  h += txListCard(c.tx, c.sel, cur);
   const dstyle = v => c.kind === 'income' ? (v >= 0 ? 'pos' : 'neg') : (v > 0 ? 'neg' : 'pos');
   h += `<section class="tiles" style="gap:8px"><div class="mtile"><span class="k">${mShort(c.sel)} total</span><span class="v">${cad(cur)}</span></div>
     <div class="mtile"><span class="k">vs ${prev == null ? 'earlier' : mShort(months[si - 1])}</span><span class="v ${prev == null ? '' : dstyle(cur - prev)}">${prev == null ? '—' : cadS(cur - prev)}</span>${prev ? `<span class="xs muted">${(cur - prev >= 0 ? '+' : '−') + Math.abs((cur - prev) / prev * 100).toFixed(1)}%</span>` : ''}</div>
@@ -1040,10 +1041,10 @@ async function deleteTx(){
   } catch(e){ S.busy.edit = false; S.err.edit = errText(e); render(); }
 }
 function afterWrite(){
-  S.monthData = {}; S.netTx = null;
+  S.monthData = {};
   refreshAll();
   if(S.view === 'txns') loadTxns();
-  if(S.view === 'cat') loadCat();
+  if(S.view === 'cat' || S.view === 'cattx') loadCat();
 }
 function openBudYear(cid){
   S.by = {cid, year: +S.month.slice(0, 4), data: null, confirmRemove: false}; S.bedit = null; delete S.err.budget;
@@ -1233,10 +1234,10 @@ document.addEventListener('click', e => {
     case 'acctactive': setActive(el.dataset.id); break;
     case 'nweye': { const a = acct(el.dataset.id); if(a) setNetWorth([a.id], !a.nw); break; }
     case 'inskind': S.insKind = el.dataset.v; render(); break;
-    case 'netsel': S.netTx = null; S.netScrolled = false; setMonth(el.dataset.m); break;
+    case 'netsel': S.netScrolled = false; setMonth(el.dataset.m); openTxns({txBreak: 'inout', txMonth: el.dataset.m}); break;
     case 'cat': if(el.dataset.cid) openCat(el.dataset.cid, el.dataset.k); break;
     case 'catsw': S.cat.cid = el.dataset.cid; S.cat.rows = null; S.cat.tx = null; S.cat.scrolled = false; render(); loadCat(); break;
-    case 'catsel': S.cat.sel = el.dataset.m; S.cat.tx = null; render(); loadCatTx(); if(!S.monthData[S.cat.sel]) loadMonth(S.cat.sel); break;
+    case 'catsel': S.cat.sel = el.dataset.m; S.cat.tx = null; if(!S.monthData[S.cat.sel]) loadMonth(S.cat.sel); go('cattx', true); loadCatTx(); break;
     case 'catm': { const ms = chartMonths(S.cat.end); const i = ms.indexOf(S.cat.sel) + (+el.dataset.d); if(ms[i]){ S.cat.sel = ms[i]; S.cat.tx = null; S.cat.scrolled = false; render(); loadCatTx(); } break; }
     case 'alltx': openTxns(S.view === 'txns' && S.txBreak ? {txMonth: S.txMonth} : undefined); break;
     case 'breakdown': openTxns({txBreak: el.dataset.v}); break;
