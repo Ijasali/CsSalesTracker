@@ -24,7 +24,7 @@
   --hero:#15171A; --hero-2:#24272B; --hero-ink:#FFFFFF; --hero-muted:#C9CCD1; --hero-owed:#F2B08F;
   --wife:#553A95; --wife-soft:#EEE8F7; --joint:#3F4348; --joint-soft:#ECE9E2;
   --bar:#6E9AD6; --bar-sel:#16427F; --avg:#8C877C; --shadow:0 1px 2px rgba(21,23,26,.05);
-  --gain:#2A6CC4; --loss:#C2571A;
+  --gain:#2A6CC4; --loss:#C2571A; --invest:#B07A12;
   --display:"Fraunces",Georgia,"Times New Roman",serif; --body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
 }
 @media (prefers-color-scheme: dark){
@@ -36,7 +36,7 @@
     --hero:#23272D; --hero-2:#2E333A; --hero-ink:#FFFFFF; --hero-muted:#AEB3BA; --hero-owed:#F2B08F;
     --wife:#C4B2F0; --wife-soft:#2E2640; --joint:#C4C7CC; --joint-soft:#2A2E34;
     --bar:#4F74A8; --bar-sel:#A9C8F5; --avg:#8C877C; --shadow:none;
-    --gain:#5B8FD6; --loss:#D0703F;
+    --gain:#5B8FD6; --loss:#D0703F; --invest:#B08530;
   }
 }
 :root[data-theme="dark"]{
@@ -47,7 +47,7 @@
   --hero:#23272D; --hero-2:#2E333A; --hero-ink:#FFFFFF; --hero-muted:#AEB3BA; --hero-owed:#F2B08F;
   --wife:#C4B2F0; --wife-soft:#2E2640; --joint:#C4C7CC; --joint-soft:#2A2E34;
   --bar:#4F74A8; --bar-sel:#A9C8F5; --avg:#8C877C; --shadow:none;
-  --gain:#5B8FD6; --loss:#D0703F;
+  --gain:#5B8FD6; --loss:#D0703F; --invest:#B08530;
 }
 html,body{height:100%}
 body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
@@ -152,6 +152,16 @@ nav.tabs .add{width:52px;height:52px;border-radius:26px;background:var(--ink);co
 .check{width:22px;height:22px;accent-color:var(--accent);flex-shrink:0}
 .skel{color:var(--muted);font-size:14px;padding:12px 0}
 .nplot{position:relative;height:190px;display:flex}
+.ycol{position:relative;flex-shrink:0;width:62px;height:100%;border:0;background:none;padding:0;cursor:pointer;border-radius:8px}
+.ycol[aria-pressed="true"]{background:var(--track)}
+.ycol i{position:absolute;width:20px;display:block}
+.ycol i.s{left:8px;background:var(--gain)} .ycol i.v{left:32px;background:var(--invest)}
+.ycol i.up{border-radius:4px 4px 0 0} .ycol i.dn{border-radius:0 0 4px 4px}
+.ylab{display:flex;padding-top:6px} .ylab div{flex-shrink:0;width:62px;text-align:center;font-size:12px;font-weight:700;color:var(--muted)} .ylab div.on{color:var(--ink)}
+.ytiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ytile{background:var(--ground);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:2px}
+.ytable td{vertical-align:top} .ytable td small{display:block;font-size:11px;font-weight:400;color:var(--muted);white-space:normal}
+.ytable tr{cursor:pointer}
 .ncol{position:relative;flex-shrink:0;width:52px;height:100%;border:0;background:none;padding:0;cursor:pointer;border-radius:8px}
 .ncol[aria-pressed="true"]{background:var(--track)}
 .ncol i{position:absolute;left:12px;right:12px;display:block}
@@ -405,7 +415,7 @@ document.addEventListener('visibilitychange', () => {
 });
 async function refreshAll(){
   S.loadedAt = Date.now();
-  S.net = null; delete S.err.net;
+  S.net = null; S.years = null; delete S.err.net; delete S.err.years;
   await loadBoot();
   if(!S.boot) return;
   await Promise.all([loadMonth(S.month), loadRecent()]);
@@ -436,11 +446,12 @@ function render(){
   else if(S.web && !S.user) body = viewLogin();
   else if(S.unlinked) body = viewUnlinked();
   else if(!S.boot) body = S.err.boot ? `<main>${hdr('Zasvia Finance')}${banner(S.err.boot, true)}<div class="row wrap"><button class="btn" data-act="reload">${svg('refresh', 18)} Try again</button>${S.web ? '<button class="btn" data-act="signout">Sign out</button>' : ''}</div></main>` : `<main>${hdr('Zasvia Finance')}<div class="skel">Loading your accounts…</div></main>`;
-  else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport, budlist: viewBudList, budyear: viewBudYear, cattx: viewCatTx})[S.view](); }
+  else { app = true; body = ({home: viewHome, accounts: viewAccounts, insights: viewInsights, budgets: viewBudgets, txns: viewTxns, cat: viewCat, add: viewAdd, imp: viewImport, budlist: viewBudList, budyear: viewBudYear, cattx: viewCatTx, yeardet: viewYearDetail})[S.view](); }
   root.innerHTML = body + (app ? tabs() : '') + (S.sheet ? sheet() : '') + (S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : '');
   if(focus){ const el = document.getElementById(focus.id); if(el){ el.focus(); try { if(focus.s != null) el.setSelectionRange(focus.s, focus.s); } catch(e){} } }
   const ch = $('.chart');
   if(ch) ch.style.scrollBehavior = 'auto';
+  if(ch && S.view === 'insights' && S.insKind === 'years' && !S.yearsScrolled && S.years){ S.yearsScrolled = true; ch.scrollLeft = ch.scrollWidth; }
   if(ch && S.view === 'insights' && S.insKind === 'net'){
     if(!S.netScrolled){ S.netScrolled = true; const sel = ch.querySelector('[aria-pressed="true"]'); ch.scrollLeft = sel ? sel.offsetLeft - ch.clientWidth / 2 + 26 : ch.scrollWidth; }
     else if(chartScroll != null) ch.scrollLeft = chartScroll;
@@ -686,7 +697,8 @@ function acctRow(a){
 /* ---- insights ---- */
 function viewInsights(){
   const md = S.monthData[S.month]; const k = S.insKind;
-  let h = `<main>${hdr('Insights', null, monthNav(S.month, 'month'))}<div class="seg" role="group" aria-label="Show" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="inskind" data-v="expense" aria-pressed="${k === 'expense'}">Expenses</button><button data-act="inskind" data-v="income" aria-pressed="${k === 'income'}">Income</button><button data-act="inskind" data-v="net" aria-pressed="${k === 'net'}">Net</button></div>`;
+  let h = `<main>${hdr('Insights', null, k === 'years' ? '' : monthNav(S.month, 'month'))}<div class="seg" role="group" aria-label="Show" style="grid-template-columns:repeat(4,minmax(0,1fr))"><button data-act="inskind" data-v="expense" aria-pressed="${k === 'expense'}">Expenses</button><button data-act="inskind" data-v="income" aria-pressed="${k === 'income'}">Income</button><button data-act="inskind" data-v="net" aria-pressed="${k === 'net'}">Net</button><button data-act="inskind" data-v="years" aria-pressed="${k === 'years'}">Years</button></div>`;
+  if(k === 'years') return h + viewYears() + `</main>`;
   if(S.err.month) h += banner(S.err.month, true);
   if(!md) return h + `<div class="skel">Loading…</div></main>`;
   if(k === 'net') return h + viewNet(md) + `</main>`;
@@ -717,6 +729,55 @@ function viewCatTx(){
   if(list.length >= 200) h += `<span class="xs muted">Showing the first 200.</span>`;
   return h + `</main>`;
 }
+/* ---- years: saved and invested per calendar year ---- */
+// Saved = income − spending (accounts counted in totals). Invested = money moved into investment
+// accounts (TFSA, RRSP, GIC, crypto…) and business ventures, minus money taken back out.
+const yearRow = r => { const inv = Number(r.inv), biz = Number(r.biz); return {yr: r.yr, saved: Number(r.income) - Number(r.spent), inv, biz, invested: inv + biz, income: Number(r.income), spent: Number(r.spent)}; };
+function viewYears(){
+  if(S.err.years) return banner(S.err.years, true);
+  if(!S.years){ if(!S.busy.years) setTimeout(loadYears); return `<div class="skel">Loading your years…</div>`; }
+  const rows = S.years.map(yearRow); if(!rows.length) return `<div class="skel">Nothing recorded yet.</div>`;
+  const cur = +todayISO().slice(0, 4); const sel = S.yearSel || rows[rows.length - 1].yr;
+  const ts = rows.reduce((t, r) => t + r.saved, 0), ti = rows.reduce((t, r) => t + r.invested, 0);
+  let h = `<section class="card"><span class="sm muted sb">Since ${rows[0].yr} (${rows.length} years)</span><div class="ytiles">
+    <div class="ytile"><span class="sm sb"><i class="key" style="background:var(--gain)"></i>Saved</span><span class="big" style="font-size:26px">${cad0(ts)}</span><span class="xs muted">income − spending</span></div>
+    <div class="ytile"><span class="sm sb"><i class="key" style="background:var(--invest)"></i>Invested</span><span class="big" style="font-size:26px">${cad0(ti)}</span><span class="xs muted">moved in, minus taken out</span></div></div></section>`;
+  const mx = Math.max(1, ...rows.map(r => Math.max(r.saved, r.invested, 0))), mn = Math.min(0, ...rows.map(r => Math.min(r.saved, r.invested)));
+  const PH = 190, pad = 16, sc = (PH - 2 * pad) / (mx - mn), z = pad + mx * sc;
+  const bar = (v, cls) => { const hgt = Math.max(v ? 2 : 0, Math.round(Math.abs(v) * sc)); return `<i class="${cls} ${v >= 0 ? 'up' : 'dn'}" style="top:${v >= 0 ? z - hgt : z}px;height:${hgt}px"></i>`; };
+  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Saved and invested each year"><div class="row sp" style="padding:0 16px"><span class="sm b">Each year</span><span class="xs muted">tap a year for details</span></div>
+    <div class="row xs muted" style="padding:0 16px;gap:14px"><span><i class="key" style="background:var(--gain)"></i>Saved</span><span><i class="key" style="background:var(--invest)"></i>Invested</span></div>
+    <div class="chart"><div class="in" style="width:${rows.length * 62 + 16}px"><div class="nplot"><div class="nzero" style="top:${z}px"></div>` +
+    rows.map(r => `<button class="ycol" data-act="yearsel" data-y="${r.yr}" aria-pressed="${r.yr === sel}" aria-label="${r.yr}: saved ${cad0(r.saved)}, invested ${cad0(r.invested)}">${bar(r.saved, 's')}${bar(r.invested, 'v')}</button>`).join('') +
+    `</div><div class="ylab">${rows.map(r => `<div class="${r.yr === sel ? 'on' : ''}">${r.yr}${r.yr === cur ? '*' : ''}</div>`).join('')}</div></div></div>
+    <span class="xs muted" style="padding:0 16px">Below the line = more taken out than put in. * ${cur} so far.</span></section>`;
+  h += `<section class="card tight"><table class="ntable ytable"><caption class="sm b" style="text-align:left;padding:10px 0 4px">Year by year</caption><thead><tr><th scope="col">Year</th><th scope="col">Saved</th><th scope="col">Invested</th></tr></thead><tbody>` +
+    rows.slice().reverse().map(r => `<tr class="${r.yr === sel ? 'on' : ''}" data-act="yearsel" data-y="${r.yr}"><td>${r.yr}${r.yr === cur ? ' (so far)' : ''}</td><td class="${r.saved >= 0 ? 'pos' : 'neg'}">${r.saved < 0 ? '−' : ''}${cad0(Math.abs(r.saved))}</td><td>${r.invested < 0 ? '−' : ''}${cad0(Math.abs(r.invested))}<small>${cad0(r.inv)} TFSA/RRSP</small><small>${cad0(r.biz)} business</small></td></tr>`).join('') +
+    `</tbody></table><span class="xs muted" style="padding-bottom:10px">Saved = income minus spending (accounts counted in totals). Invested = money moved into TFSA, RRSP, GIC, crypto and other investment accounts, plus your business ventures, minus money taken back out.</span></section>`;
+  return h;
+}
+const loadYears = () => load('years', async () => { S.years = (await api('app_years', {})) || []; S.yearsScrolled = false; });
+function viewYearDetail(){
+  const y = S.yearDet; const r = (S.years || []).map(yearRow).find(x => x.yr === y);
+  let h = `<main>${hdr(String(y), 'Saved and invested', null, true)}`;
+  if(r) h += `<section class="card" style="gap:6px"><div class="row sp sm"><span>Income</span><span class="b pos">${cad(r.income)}</span></div><div class="row sp sm"><span>Spent</span><span class="b">−${cad(r.spent)}</span></div>
+    <div class="row sp" style="border-top:1px solid var(--line2);padding-top:8px"><span class="b">Saved</span><span class="b ${r.saved >= 0 ? 'pos' : 'neg'}">${cad(r.saved)}</span></div>
+    <div class="row sp sm" style="padding-top:8px"><span><i class="key" style="background:var(--invest)"></i>Invested</span><span class="b">${cad(r.invested)}</span></div>
+    <div class="row sp xs muted"><span>TFSA, RRSP and other investments</span><span>${cad(r.inv)}</span></div><div class="row sp xs muted"><span>Business ventures</span><span>${cad(r.biz)}</span></div></section>`;
+  if(S.err.ymoves) h += banner(S.err.ymoves, true);
+  const list = S.yearMoves;
+  if(!list) return h + `<div class="skel">Loading…</div></main>`;
+  h += `<h2 style="margin-top:4px">Money moved in and out of investments</h2>`;
+  if(!list.length) return h + `<div class="skel">No money moved into or out of investments in ${y}.</div></main>`;
+  const days = {}; list.forEach(t => { (days[t.d] = days[t.d] || []).push(t); });
+  for(const d of Object.keys(days)) h += `<section class="card tight" style="gap:0"><div class="row sp xs muted b" style="padding:10px 0 4px"><span>${esc(dayLabel(d))}</span></div><div class="list">${days[d].map(txRow).join('')}</div></section>`;
+  return h + `<button class="link" data-act="yeartx" style="align-self:flex-start">See income and spending for ${y}, month by month</button></main>`;
+}
+function openYear(y){
+  S.yearSel = y; S.yearDet = y; S.yearMoves = null; go('yeardet', true);
+  load('ymoves', async () => { S.yearMoves = (await api('app_year_moves', {year: y})) || []; });
+}
+
 /* ---- net: income minus spending ---- */
 function viewNet(md){
   const inc = Number(md.income), sp = Number(md.spent), net = inc - sp;
@@ -1041,7 +1102,8 @@ async function deleteTx(){
   } catch(e){ S.busy.edit = false; S.err.edit = errText(e); render(); }
 }
 function afterWrite(){
-  S.monthData = {};
+  S.monthData = {}; S.years = null;
+  if(S.view === 'yeardet'){ loadYears(); load('ymoves', async () => { S.yearMoves = (await api('app_year_moves', {year: S.yearDet})) || []; }); }
   refreshAll();
   if(S.view === 'txns') loadTxns();
   if(S.view === 'cat' || S.view === 'cattx') loadCat();
@@ -1234,6 +1296,8 @@ document.addEventListener('click', e => {
     case 'acctactive': setActive(el.dataset.id); break;
     case 'nweye': { const a = acct(el.dataset.id); if(a) setNetWorth([a.id], !a.nw); break; }
     case 'inskind': S.insKind = el.dataset.v; render(); break;
+    case 'yearsel': openYear(+el.dataset.y); break;
+    case 'yeartx': S.view = 'insights'; S.stack = []; S.insKind = 'net'; setMonth(String(S.yearDet) + (S.yearDet === +todayISO().slice(0, 4) ? todayISO().slice(4, 8) + '01' : '-12-01')); break;
     case 'netsel': S.netScrolled = false; setMonth(el.dataset.m); openTxns({txBreak: 'inout', txMonth: el.dataset.m}); break;
     case 'cat': if(el.dataset.cid) openCat(el.dataset.cid, el.dataset.k); break;
     case 'catsw': S.cat.cid = el.dataset.cid; S.cat.rows = null; S.cat.tx = null; S.cat.scrolled = false; render(); loadCat(); break;
