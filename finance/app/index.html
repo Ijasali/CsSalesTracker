@@ -234,6 +234,12 @@ function todayISO(){
 }
 const monthOf = iso => iso.slice(0, 7) + '-01';
 function addMonths(m, k){ const y = +m.slice(0,4), mo = +m.slice(5,7) - 1 + k; const d = new Date(Date.UTC(y, mo, 1)); return d.toISOString().slice(0, 10); }
+// Every month from the first recorded transaction (S.first) to `end`, at least 12.
+function chartMonths(end){
+  const out = []; let m = S.first && S.first < addMonths(end, -11) ? S.first : addMonths(end, -11);
+  while(m <= end){ out.push(m); m = addMonths(m, 1); }
+  return out;
+}
 const mLabel = m => MONTHS_L[+m.slice(5,7) - 1] + ' ' + m.slice(0,4);
 const mShort = m => MONTHS[+m.slice(5,7) - 1];
 function dayLabel(iso){
@@ -375,7 +381,10 @@ async function load(key, fn){
   try { await fn(); } catch(e){ S.err[key] = errText(e); }
   S.busy[key] = false; render();
 }
-const loadBoot = () => load('boot', async () => { S.boot = await api('app_boot', {}); S.unlinked = S.web && !S.boot; });
+const loadBoot = () => load('boot', async () => {
+  const [b, f] = await Promise.all([api('app_boot', {}), api('app_first_month', {}).catch(() => null)]);
+  S.boot = b; S.unlinked = S.web && !S.boot; if(f) S.first = String(f).slice(0, 10);
+});
 const loadMonth = m => load('month', async () => { S.monthData[m] = await api('app_month', {m: D(m).slice(1, -1)}); });
 const loadRecent = () => load('recent', async () => { S.recent = (await api('app_recent', {})) || []; });
 const loadTxns = () => load('txns', async () => {
@@ -384,7 +393,7 @@ const loadTxns = () => load('txns', async () => {
 async function loadCat(){
   const c = S.cat; if(!c) return;
   await load('cat', async () => {
-    const [r, tx] = await Promise.all([api('app_cat', {cid: c.cid, end: c.end, kind: c.kind}), api('app_cat_tx', {cid: c.cid, m: c.sel, kind: c.kind})]);
+    const [r, tx] = await Promise.all([api('app_cat', {cid: c.cid, end: c.end, kind: c.kind, from: chartMonths(c.end)[0]}), api('app_cat_tx', {cid: c.cid, m: c.sel, kind: c.kind})]);
     c.rows = (r && r.rows) || []; c.tx = tx || [];
   });
 }
@@ -703,12 +712,12 @@ function viewNet(md){
     <span class="sm ${net >= 0 ? 'pos' : 'neg'} sb">${inc > 0 ? (net >= 0 ? 'You kept ' + Math.round(net / inc * 100) + '% of what came in' : 'Spent ' + cad(-net) + ' more than came in') : (sp ? 'No income recorded this month' : 'Nothing recorded this month')}</span></section>`;
   if(S.err.net) h += banner(S.err.net, true);
   const rows = S.net;
-  if(!rows){ if(!S.busy.net && !S.err.net) setTimeout(loadNet); return h + `<div class="skel">Loading the last 12 months…</div>`; }
+  if(!rows){ if(!S.busy.net && !S.err.net) setTimeout(loadNet); return h + `<div class="skel">Loading your history…</div>`; }
   const nets = rows.map(r => Number(r.income) - Number(r.spent));
   const maxP = Math.max(0, ...nets), maxN = Math.max(0, ...nets.map(v => -v));
   const H = 190, pad = 22, scale = (H - 2 * pad) / ((maxP + maxN) || 1), zero = pad + maxP * scale;
-  const tot = rows.reduce((a, r) => ({i: a.i + Number(r.income), s: a.s + Number(r.spent)}), {i: 0, s: 0});
-  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Income minus spending, last 12 months"><div class="row sp" style="padding:0 16px"><span class="sm b">Last 12 months</span><span class="xs muted">tap a month</span></div>
+  const tot = rows.slice(-12).reduce((a, r) => ({i: a.i + Number(r.income), s: a.s + Number(r.spent)}), {i: 0, s: 0});
+  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Income minus spending since ${esc(mLabel(rows[0].m))}"><div class="row sp" style="padding:0 16px"><span class="sm b">Since ${esc(mShort(rows[0].m) + ' ' + rows[0].m.slice(0, 4))}</span><span class="xs muted">tap a month</span></div>
     <div class="row xs muted" style="padding:0 16px;gap:14px"><span><i class="key" style="background:var(--gain)"></i>Kept (income above spending)</span><span><i class="key" style="background:var(--loss)"></i>Overspent</span></div>
     <div class="chart"><div class="in" style="width:${rows.length * 52 + 16}px"><div class="nplot"><div class="nzero" style="top:${zero}px"></div>` +
     rows.map((r, i) => {
@@ -718,13 +727,13 @@ function viewNet(md){
       return `<button class="ncol" data-act="netsel" data-m="${r.m}" aria-pressed="${sel}" aria-label="${esc(mLabel(r.m))}: income ${cad(r.income)}, spent ${cad(r.spent)}, net ${cadS(v)}">${bar}</button>`;
     }).join('') +
     `</div><div class="mlab">${rows.map((r, i) => `<div class="${r.m === S.month ? 'on' : ''}">${mShort(r.m)}<small>${i === 0 || r.m.slice(5, 7) === '01' ? r.m.slice(0, 4) : ''}</small></div>`).join('')}</div></div></div>
-    <div class="row sp sm" style="padding:0 16px"><span class="muted">12 months: ${cad0(tot.i)} in, ${cad0(tot.s)} out</span><span class="b" style="white-space:nowrap">${tot.i - tot.s >= 0 ? '+' : '−'}${cad0(Math.abs(tot.i - tot.s))}</span></div></section>`;
-  h += `<section class="card tight"><table class="ntable"><caption class="sm b" style="text-align:left;padding:10px 0 4px">Month by month</caption><thead><tr><th scope="col">Month</th><th scope="col">Income</th><th scope="col">Spent</th><th scope="col">Net</th></tr></thead><tbody>` +
-    rows.slice().reverse().map(r => { const v = Number(r.income) - Number(r.spent); return `<tr class="${r.m === S.month ? 'on' : ''}"><td>${mShort(r.m)} ${r.m.slice(0, 4)}</td><td>${cad0(r.income)}</td><td>${cad0(r.spent)}</td><td class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${cad0(Math.abs(v))}</td></tr>`; }).join('') +
+    <div class="row sp sm" style="padding:0 16px"><span class="muted">Last 12 months: ${cad0(tot.i)} in, ${cad0(tot.s)} out</span><span class="b" style="white-space:nowrap">${tot.i - tot.s >= 0 ? '+' : '−'}${cad0(Math.abs(tot.i - tot.s))}</span></div></section>`;
+  h += `<section class="card tight"><table class="ntable"><caption class="sm b" style="text-align:left;padding:10px 0 4px">Last 12 months</caption><thead><tr><th scope="col">Month</th><th scope="col">Income</th><th scope="col">Spent</th><th scope="col">Net</th></tr></thead><tbody>` +
+    rows.slice(-12).reverse().map(r => { const v = Number(r.income) - Number(r.spent); return `<tr class="${r.m === S.month ? 'on' : ''}"><td>${mShort(r.m)} ${r.m.slice(0, 4)}</td><td>${cad0(r.income)}</td><td>${cad0(r.spent)}</td><td class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${cad0(Math.abs(v))}</td></tr>`; }).join('') +
     `</tbody></table></section>`;
   return h;
 }
-const loadNet = () => load('net', async () => { S.netScrolled = false; S.net = await api('app_net', {end: monthOf(todayISO())}); });
+const loadNet = () => load('net', async () => { S.netScrolled = false; S.net = await api('app_net', {end: monthOf(todayISO()), from: chartMonths(monthOf(todayISO()))[0]}); });
 
 /* ---- category history ---- */
 function viewCat(){
@@ -734,15 +743,15 @@ function viewCat(){
   h += `<div class="chips" role="group" aria-label="Category">${tops.map(t => `<button class="chip" data-act="catsw" data-cid="${t.id}" aria-pressed="${t.id === c.cid}">${esc(t.name)}</button>`).join('')}</div>`;
   if(S.err.cat) h += banner(S.err.cat, true);
   if(!c.rows) return h + `<div class="skel">Loading history…</div></main>`;
-  const months = []; for(let i = 11; i >= 0; i--) months.push(addMonths(c.end, -i));
+  const months = chartMonths(c.end);
   const tot = {}; const bySub = {};
   for(const r of c.rows){ tot[r.m] = (tot[r.m] || 0) + Number(r.amt); if(r.m === c.sel){ bySub[r.sub] = (bySub[r.sub] || 0) + Number(r.amt); } }
-  const vals = months.map(m => tot[m] || 0); const avg = vals.reduce((a, b) => a + b, 0) / 12;
+  const vals = months.map(m => tot[m] || 0); const avg = vals.slice(-12).reduce((a, b) => a + b, 0) / 12;
   const max = Math.max(1, ...vals) * 1.18; const H = 150;
   const si = months.indexOf(c.sel); const cur = tot[c.sel] || 0; const prev = si > 0 ? vals[si - 1] : null;
   h += `<div class="row sp"><button class="icon-btn" data-act="catm" data-d="-1" aria-label="Previous month"${si <= 0 ? ' disabled' : ''}>${svg('left', 18)}</button><span class="b">${esc(mLabel(c.sel))}</span><button class="icon-btn" data-act="catm" data-d="1" aria-label="Next month"${si >= 11 ? ' disabled' : ''}>${svg('right', 18)}</button></div>`;
-  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Monthly totals, last 12 months"><div class="row sp" style="padding:0 16px"><span class="sm b">Last 12 months</span><span class="xs muted">swipe for earlier · tap a month</span></div>
-    <div class="chart"><div class="in" style="width:${12 * 52 + 16}px"><div class="plot"><div class="avg" style="bottom:${Math.round(avg / max * H)}px"></div>` +
+  h += `<section class="card" style="padding:18px 0 14px;overflow:hidden" aria-label="Monthly totals since ${esc(mLabel(months[0]))}"><div class="row sp" style="padding:0 16px"><span class="sm b">Since ${esc(mShort(months[0]) + ' ' + months[0].slice(0, 4))}</span><span class="xs muted">swipe for earlier · tap a month</span></div>
+    <div class="chart"><div class="in" style="width:${months.length * 52 + 16}px"><div class="plot"><div class="avg" style="bottom:${Math.round(avg / max * H)}px"></div>` +
     months.map((m, i) => `<button class="col" data-act="catsel" data-m="${m}" aria-pressed="${m === c.sel}" aria-label="${esc(mLabel(m))}: ${cad(vals[i])}"><span>${vals[i] ? short$(vals[i]) : ''}</span><i style="height:${Math.max(vals[i] ? 2 : 0, Math.round(vals[i] / max * H))}px"></i></button>`).join('') +
     `</div><div class="mlab">${months.map((m, i) => `<div class="${m === c.sel ? 'on' : ''}">${mShort(m)}<small>${i === 0 || m.slice(5, 7) === '01' ? m.slice(0, 4) : ''}</small></div>`).join('')}</div></div></div>
     <div class="row xs muted" style="padding:0 16px"><span aria-hidden="true" style="width:18px;border-top:1.5px dashed var(--avg)"></span><span>12-month average ${cad(avg)}</span></div></section>`;
@@ -961,6 +970,7 @@ function sheet(){
       <form data-form="edit" style="display:flex;flex-direction:column;gap:12px">`;
     if(t.kind !== 'transfer') h += `<label class="field"><span>Category</span><select id="ed-cat" class="inp">${catOptions(t.kind, s.cat, true)}</select><span class="xs muted">Changing it teaches the app: the next ${esc(t.descr || t.payee || 'transaction')} gets the same category.</span></label>
       <label class="field"><span>Payee</span><input id="ed-payee" class="inp" value="${esc(s.payee)}"></label>`;
+    h += `<label class="field"><span>Amount${t.kind === 'transfer' ? ' (both accounts)' : (t.kind === 'income' ? ' (money in)' : ' (money out)')}</span><input id="ed-amt" class="inp" inputmode="decimal" value="${esc(s.amt)}" required></label>`;
     h += `<label class="field"><span>Date${t.kind === 'transfer' ? ' (both accounts)' : ''}</span><input id="ed-date" class="inp" type="date" value="${esc(s.date)}" required></label>`;
     h += `<label class="field"><span>Note</span><input id="ed-note" class="inp" value="${esc(s.note)}"></label>`;
     if(S.err.edit) h += banner(S.err.edit, true);
@@ -996,14 +1006,16 @@ function openEdit(id){
   const all = [...(S.recent || []), ...(S.txns || []), ...((S.cat && S.cat.tx) || [])];
   const t = all.find(x => x.id === id); if(!t) return;
   delete S.err.edit;
-  S.sheet = {type: 'edit', t, cat: t.cid || '', payee: t.payee || '', note: t.note || '', date: t.d, confirmDelete: false}; render();
+  S.sheet = {type: 'edit', t, cat: t.cid || '', payee: t.payee || '', note: t.note || '', date: t.d, amt: String(Math.abs(Number(t.amt)).toFixed(2)), confirmDelete: false}; render();
 }
 async function saveEdit(){
   const s = S.sheet; const t = s.t; delete S.err.edit;
   try {
     S.busy.edit = true; render();
     D(s.date);
-    await api('app_update_txn', {id: t.id, note: s.note, payee: s.payee, cat: s.cat || null, date: s.date}, true);
+    const amt = Math.abs(Number(String(s.amt).replace(/[$,\s−-]/g, '')));
+    if(!isFinite(amt) || !amt) throw {code: 'bad_input', message: 'Enter an amount.'};
+    await api('app_update_txn', {id: t.id, note: s.note, payee: s.payee, cat: s.cat || null, date: s.date, amount: N(amt)}, true);
     S.busy.edit = false; S.sheet = null; toast('Saved'); afterWrite();
   } catch(e){ S.busy.edit = false; S.err.edit = errText(e); render(); }
 }
@@ -1213,7 +1225,7 @@ document.addEventListener('click', e => {
     case 'cat': if(el.dataset.cid) openCat(el.dataset.cid, el.dataset.k); break;
     case 'catsw': S.cat.cid = el.dataset.cid; S.cat.rows = null; S.cat.tx = null; S.cat.scrolled = false; render(); loadCat(); break;
     case 'catsel': S.cat.sel = el.dataset.m; S.cat.tx = null; render(); loadCatTx(); if(!S.monthData[S.cat.sel]) loadMonth(S.cat.sel); break;
-    case 'catm': { const ms = []; for(let i = 11; i >= 0; i--) ms.push(addMonths(S.cat.end, -i)); const i = ms.indexOf(S.cat.sel) + (+el.dataset.d); if(ms[i]){ S.cat.sel = ms[i]; S.cat.tx = null; S.cat.scrolled = false; render(); loadCatTx(); } break; }
+    case 'catm': { const ms = chartMonths(S.cat.end); const i = ms.indexOf(S.cat.sel) + (+el.dataset.d); if(ms[i]){ S.cat.sel = ms[i]; S.cat.tx = null; S.cat.scrolled = false; render(); loadCatTx(); } break; }
     case 'alltx': openTxns(S.view === 'txns' && S.txBreak ? {txMonth: S.txMonth} : undefined); break;
     case 'breakdown': openTxns({txBreak: el.dataset.v}); break;
     case 'review': openTxns({txReview: true}); break;
@@ -1265,7 +1277,7 @@ document.addEventListener('input', e => {
   if(id === 'login-pw' && S.login){ S.login.pw = t.value; return; }
   if(id === 'txq'){ S.txq = t.value; clearTimeout(searchT); searchT = setTimeout(() => { S.txns = null; render(); loadTxns(); }, 450); return; }
   if(id.startsWith('add-') && S.add){ const k = {'add-amt':'amt','add-date':'date','add-payee':'payee','add-note':'note'}[id]; if(k) S.add[k] = t.value; return; }
-  if(id.startsWith('ed-') && S.sheet){ const k = {'ed-payee':'payee','ed-note':'note','ed-date':'date'}[id]; if(k) S.sheet[k] = t.value; return; }
+  if(id.startsWith('ed-') && S.sheet){ const k = {'ed-payee':'payee','ed-note':'note','ed-date':'date','ed-amt':'amt'}[id]; if(k) S.sheet[k] = t.value; return; }
   if(id === 'bud-amt' && S.bedit){ S.bedit.v = t.value; }
 });
 document.addEventListener('change', e => {
