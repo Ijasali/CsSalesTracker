@@ -640,7 +640,7 @@ function txRow(t){
   let meta, ic, cls = '';
   if(kind === 'transfer'){ const o = acct(t.other_aid); meta = (amt < 0 ? 'To ' : 'From ') + (o ? o.name : 'another account') + ' · ' + (a ? a.name : ''); ic = '⇄'; cls = ' tr'; }
   else { meta = catName(t.cid) + ' · ' + (a ? a.name : ''); ic = initials(topName(t.cid)); cls = kind === 'income' ? ' in' : ''; }
-  const col = kind === 'income' ? ' pos' : (kind === 'transfer' ? ' muted' : '');
+  const col = kind === 'income' || (kind === 'expense' && amt > 0) ? ' pos' : (kind === 'transfer' ? ' muted' : '');
   return `<button class="item" data-act="edit" data-id="${t.id}"><span class="ic${cls}" aria-hidden="true">${esc(ic.slice(0, 2))}</span><span class="grow"><span class="t1" style="display:block">${esc(name)}${t.review ? ' <span class="badge warn">Check</span>' : ''}</span><span class="t2" style="display:block">${esc(meta)}</span></span><span class="amt${col}">${kind === 'transfer' ? cad(Math.abs(amt)) : cadS(amt)}</span></button>`;
 }
 
@@ -922,6 +922,7 @@ function viewAdd(){
     <label class="field"><span>${k === 'transfer' ? 'From account' : (k === 'income' ? 'Received in' : 'Paid from')}</span><select id="add-acct" class="inp">${acctOptions(a.acct)}</select></label>`;
   if(k === 'transfer') h += `<label class="field"><span>To account</span><select id="add-to" class="inp"><option value="">Choose an account</option>${acctOptions(a.to, x => x.id !== a.acct)}</select></label>`;
   else h += `<label class="field"><span>Category</span><select id="add-cat" class="inp">${catOptions(k, a.cat, true)}</select></label>`;
+  if(k === 'expense') h += `<label class="row" style="gap:10px;align-items:center"><input type="checkbox" class="check" id="add-refund"${a.refund ? ' checked' : ''}><span class="grow"><span class="sm b" style="display:block">Refund or return</span><span class="xs muted" style="display:block">Money back from a store. Pick the category of the purchase so its spending and budget go down.</span></span></label>`;
   h += `<div class="formrow"><label class="field"><span>Date</span><input id="add-date" class="inp" type="date" value="${esc(a.date)}" required></label><label class="field"><span>${k === 'transfer' ? 'Label' : 'Payee'}</span><input id="add-payee" class="inp" value="${esc(a.payee)}" placeholder="${k === 'transfer' ? 'Card payment' : 'Tim Hortons'}"></label></div>
     <label class="field"><span>Note</span><input id="add-note" class="inp" value="${esc(a.note)}"></label>`;
   if(S.err.add) h += banner(S.err.add, true);
@@ -986,11 +987,11 @@ function sheet(){
   if(s.type === 'edit'){
     const t = s.t; const a = acct(t.aid);
     let h = `<div class="sheet-bg" data-act="closesheet"><div class="sheet" role="dialog" aria-label="Transaction" data-stop="1"><div class="row sp"><h2>${esc(t.payee || t.descr || (t.kind === 'transfer' ? 'Transfer' : 'Transaction'))}</h2><button class="icon-btn" data-act="closesheet" aria-label="Close">${svg('x', 18)}</button></div>
-      <div class="card" style="gap:4px"><span class="mid${t.kind === 'income' ? ' pos' : ''}">${t.kind === 'transfer' ? cad(Math.abs(t.amt)) : cadS(t.amt)}</span><span class="sm muted">${esc(dayLabel(t.d))} · ${esc(a ? a.name : '')}${t.kind === 'transfer' && acct(t.other_aid) ? (Number(t.amt) < 0 ? ' → ' : ' ← ') + esc(acct(t.other_aid).name) : ''}</span>${t.descr ? `<span class="xs muted">Bank text: ${esc(t.descr)}</span>` : ''}</div>
+      <div class="card" style="gap:4px"><span class="mid${t.kind === 'income' || (t.kind === 'expense' && Number(t.amt) > 0) ? ' pos' : ''}">${t.kind === 'transfer' ? cad(Math.abs(t.amt)) : cadS(t.amt)}</span><span class="sm muted">${esc(dayLabel(t.d))} · ${esc(a ? a.name : '')}${t.kind === 'transfer' && acct(t.other_aid) ? (Number(t.amt) < 0 ? ' → ' : ' ← ') + esc(acct(t.other_aid).name) : ''}</span>${t.descr ? `<span class="xs muted">Bank text: ${esc(t.descr)}</span>` : ''}</div>
       <form data-form="edit" style="display:flex;flex-direction:column;gap:12px">`;
     if(t.kind !== 'transfer') h += `<label class="field"><span>Category</span><select id="ed-cat" class="inp">${catOptions(t.kind, s.cat, true)}</select><span class="xs muted">Changing it teaches the app: the next ${esc(t.descr || t.payee || 'transaction')} gets the same category.</span></label>
       <label class="field"><span>Payee</span><input id="ed-payee" class="inp" value="${esc(s.payee)}"></label>`;
-    h += `<label class="field"><span>Amount${t.kind === 'transfer' ? ' (both accounts)' : (t.kind === 'income' ? ' (money in)' : ' (money out)')}</span><input id="ed-amt" class="inp" inputmode="decimal" value="${esc(s.amt)}" required></label>`;
+    h += `<label class="field"><span>Amount${t.kind === 'transfer' ? ' (both accounts)' : (t.kind === 'income' ? ' (money in)' : (Number(t.amt) > 0 ? ' (refund, money back)' : ' (money out)'))}</span><input id="ed-amt" class="inp" inputmode="decimal" value="${esc(s.amt)}" required></label>`;
     h += `<label class="field"><span>Date${t.kind === 'transfer' ? ' (both accounts)' : ''}</span><input id="ed-date" class="inp" type="date" value="${esc(s.date)}" required></label>`;
     h += `<label class="field"><span>Note</span><input id="ed-note" class="inp" value="${esc(s.note)}"></label>`;
     if(S.err.edit) h += banner(S.err.edit, true);
@@ -1016,7 +1017,7 @@ async function saveAdd(){
     if(a.kind === 'transfer' && !a.to) throw {code: 'bad_input', message: 'Choose the account the money went to.'};
     S.busy.add = true; render();
     D(a.date);
-    await api('app_add_txn', {kind: a.kind, amount: amt, acct: a.acct, to: a.kind === 'transfer' ? a.to : null, cat: a.kind === 'transfer' ? null : (a.cat || null), date: a.date, payee: a.payee, note: a.note}, true);
+    await api('app_add_txn', {kind: a.kind, amount: amt, acct: a.acct, to: a.kind === 'transfer' ? a.to : null, cat: a.kind === 'transfer' ? null : (a.cat || null), date: a.date, payee: a.payee, note: a.note, refund: a.kind === 'expense' && !!a.refund}, true);
     store('lastAcct', a.acct);
     S.busy.add = false; S.monthData = {}; back(); toast('Saved');
     refreshAll();
@@ -1125,7 +1126,8 @@ For each transaction give:
 - "amount": a positive number.
 - "direction": "out" if money left this account (purchase, bill, withdrawal, fee, e-transfer sent), "in" if money came in (deposit, salary, refund, a payment received on a credit card).
 - "pending": true if the row is marked pending, else false.
-- "kind": "transfer" when the money moves between the household's own accounts (a credit card payment, a transfer to savings, TFSA, RRSP or another of their accounts); "income" for money received from outside; otherwise "expense".
+- "kind": "transfer" when the money moves between the household's own accounts (a credit card payment, a transfer to savings, TFSA, RRSP or another of their accounts); "expense" with direction "in" for a refund or return from a store or merchant (it lowers that spending); "income" for other money received from outside; otherwise "expense".
+- A refund or return gets the category the original purchase would have, e.g. a clothing store refund is clothing, not an income category.
 - "category": for expenses and income, the best matching category from the list below, copied exactly; "" if none fits or for transfers.
 - "confidence": your confidence in the category from 0 to 1.
 
@@ -1306,6 +1308,7 @@ document.addEventListener('change', e => {
   else if(id === 'add-acct'){ S.add.acct = t.value; if(S.add.to === t.value) S.add.to = ''; render(); }
   else if(id === 'add-to'){ S.add.to = t.value; }
   else if(id === 'add-cat'){ S.add.cat = t.value; }
+  else if(id === 'add-refund'){ S.add.refund = t.checked; }
   else if(id === 'ed-cat'){ S.sheet.cat = t.value; }
   else if(id === 'ed-date'){ S.sheet.date = t.value; }
   else if(id === 'imp-acct'){ S.imp.acct = t.value; render(); }
