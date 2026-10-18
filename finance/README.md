@@ -106,6 +106,16 @@ Transfers between your own accounts (card payments, money into a TFSA) are two r
 `transfer_group_id` and never count as spending. Row level security limits every table to members
 of the household.
 
+Refunds and returns from a store are an expense with a positive amount, in the purchase's own
+category, so they lower that category's spending and budget. Only money that isn't paying back a
+purchase (a friend settling up, for example) is income under Refund.
+
+Some accounts are not tracked transaction by transaction. Sherifa's Tangerine, where her pay lands,
+has `accounts.auto_income_category` set to Salary: every transfer out of it (for example to her
+RBC chequing) automatically adds the same amount, same day, as Salary income on Tangerine, so its
+balance stays at zero. The added row points at the transfer (`mirror_of`), follows its edits and is
+deleted with it.
+
 ## Getting transactions in without typing them
 
 Every source goes through the same steps: read the rows into `import_rows`, check for duplicates,
