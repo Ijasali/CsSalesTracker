@@ -1,0 +1,789 @@
+<title>Job Hunt Tracker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Tracks the jobs your finder agents collect and every application your applier agent prepares and submits, from the jobs schema in Supabase.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: one working column (max 1080px) — header, tab strip, then the tab's cards; details open in a side sheet. */
+:root{
+  --ground:#EEF1F2; --surface:#FFFFFF; --sunk:#E4E9EA; --line:#D6DDDF; --line-strong:#BCC7CA;
+  --ink:#10191C; --ink-2:#2E3B3F; --muted:#56656A;
+  --accent:#0B6E66; --accent-ink:#FFFFFF; --accent-soft:#D5ECE9; --accent-fg:#095C55;
+  --bar:#0B6E66; --bar-2:#8FB9B4;
+  --good-bg:#DCF1E2; --good-fg:#1B6B35;
+  --warn-bg:#FCEBCB; --warn-fg:#80510A;
+  --bad-bg:#FBE0DE; --bad-fg:#9C2A20;
+  --info-bg:#DFE8FB; --info-fg:#2848A0;
+  --plum-bg:#ECE2F7; --plum-fg:#5D3290;
+  --neutral-bg:#E4E9EA; --neutral-fg:#46555A;
+  --scrim:rgba(16,25,28,.5);
+  --display:'Archivo',system-ui,-apple-system,sans-serif;
+  --body:'Archivo',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0E1416; --surface:#161E21; --sunk:#1D272A; --line:#273337; --line-strong:#364449;
+    --ink:#E7EEEF; --ink-2:#C5D0D2; --muted:#93A3A7;
+    --accent:#4FC1B5; --accent-ink:#06201D; --accent-soft:#143532; --accent-fg:#7FD8CD;
+    --bar:#4FC1B5; --bar-2:#2D5F5A;
+    --good-bg:#15301E; --good-fg:#8ED9A6;
+    --warn-bg:#36290F; --warn-fg:#F2C774;
+    --bad-bg:#3A1A17; --bad-fg:#FF9F95;
+    --info-bg:#1A2647; --info-fg:#A9BEFA;
+    --plum-bg:#2B1F3D; --plum-fg:#CDB1F2;
+    --neutral-bg:#222C2F; --neutral-fg:#B6C2C5;
+    --scrim:rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0E1416; --surface:#161E21; --sunk:#1D272A; --line:#273337; --line-strong:#364449;
+  --ink:#E7EEEF; --ink-2:#C5D0D2; --muted:#93A3A7;
+  --accent:#4FC1B5; --accent-ink:#06201D; --accent-soft:#143532; --accent-fg:#7FD8CD;
+  --bar:#4FC1B5; --bar-2:#2D5F5A;
+  --good-bg:#15301E; --good-fg:#8ED9A6;
+  --warn-bg:#36290F; --warn-fg:#F2C774;
+  --bad-bg:#3A1A17; --bad-fg:#FF9F95;
+  --info-bg:#1A2647; --info-fg:#A9BEFA;
+  --plum-bg:#2B1F3D; --plum-fg:#CDB1F2;
+  --neutral-bg:#222C2F; --neutral-fg:#B6C2C5;
+  --scrim:rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;
+  font-variation-settings:'wdth' 100;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--accent-fg)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:12px;padding-block:12px 0;flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;min-width:0;flex:1}
+.brand h1{margin:0;font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:-.01em;font-variation-settings:'wdth' 78;text-transform:uppercase}
+.brand small{color:var(--muted);font-size:12.5px}
+.tabs{display:flex;gap:2px;overflow-x:auto;width:100%;margin-top:6px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{border:0;background:none;padding:10px 12px 11px;font-weight:600;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;display:flex;gap:6px;align-items:center}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab .n{font-family:var(--mono);font-size:11.5px;background:var(--sunk);color:var(--ink-2);border-radius:999px;padding:1px 7px}
+.tab .n.hot{background:var(--accent);color:var(--accent-ink)}
+
+main{padding-block:18px 64px}
+.grid{display:grid;gap:14px}
+.cols{display:grid;gap:14px;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+@media (max-width:820px){.cols{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.card h2{margin:0 0 12px;font-family:var(--display);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card h2 .aside{text-transform:none;letter-spacing:0;font-weight:500;font-size:12.5px}
+.empty{color:var(--muted);font-size:14px;padding:6px 0}
+
+.btn{border:1px solid var(--line-strong);background:var(--surface);border-radius:8px;padding:8px 12px;font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--ink)}
+.btn:hover{background:var(--sunk)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.danger{color:var(--bad-fg)}
+.btn.small{padding:5px 9px;font-size:13px}
+.btn[disabled]{opacity:.5;cursor:default}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;background:var(--neutral-bg);color:var(--neutral-fg)}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.good{background:var(--good-bg);color:var(--good-fg)}
+.pill.warn{background:var(--warn-bg);color:var(--warn-fg)}
+.pill.bad{background:var(--bad-bg);color:var(--bad-fg)}
+.pill.info{background:var(--info-bg);color:var(--info-fg)}
+.pill.plum{background:var(--plum-bg);color:var(--plum-fg)}
+.pill.accent{background:var(--accent-soft);color:var(--accent-fg)}
+
+.score{font-family:var(--mono);font-weight:600;font-size:13px;min-width:38px;text-align:center;padding:3px 0;border-radius:6px;background:var(--sunk);color:var(--ink-2)}
+.score.hi{background:var(--accent-soft);color:var(--accent-fg)}
+.score.lo{color:var(--muted)}
+
+/* KPI strip */
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+@media (max-width:820px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.kpi{padding:14px 14px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);margin:0 -1px -1px 0;min-width:0}
+.kpi b{display:block;font-family:var(--display);font-size:30px;font-weight:700;line-height:1.05;font-variation-settings:'wdth' 80;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12.5px;color:var(--muted)}
+.kpi .rate{font-family:var(--mono);font-size:11.5px;color:var(--accent-fg);margin-left:4px}
+
+/* 14-day chart */
+.chart{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:4px;align-items:end;height:120px;border-bottom:1px solid var(--line-strong);position:relative}
+.chart .day{display:flex;gap:2px;align-items:end;height:100%;justify-content:center}
+.chart .b{width:min(12px,45%);border-radius:3px 3px 0 0;min-height:0}
+.chart .b.f{background:var(--bar-2)}
+.chart .b.a{background:var(--bar)}
+.chart-x{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:4px;margin-top:4px;font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:center}
+.legend{display:flex;gap:14px;font-size:12.5px;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+/* list rows */
+.rows{display:flex;flex-direction:column}
+.row{display:flex;gap:12px;align-items:center;padding:11px 4px;border-top:1px solid var(--line);cursor:pointer;background:none;border-left:0;border-right:0;border-bottom:0;text-align:left;width:100%;color:inherit}
+.row:first-child{border-top:0}
+.row:hover{background:var(--sunk)}
+.row .main{flex:1;min-width:0}
+.row .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .s{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .end{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
+.row .when{font-size:12px;color:var(--muted);font-family:var(--mono)}
+
+/* funnel */
+.funnel{display:flex;flex-direction:column;gap:8px}
+.fstep{display:grid;grid-template-columns:110px minmax(0,1fr) 44px;gap:10px;align-items:center;font-size:13.5px}
+.fstep .track{height:14px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.fstep .fill{height:100%;background:var(--bar);border-radius:4px}
+.fstep b{font-family:var(--mono);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+
+/* agents */
+.agent{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:10px 0;border-top:1px solid var(--line)}
+.agent:first-child{border-top:0}
+.agent .nm{font-weight:600}
+.agent .meta{grid-column:1/-1;font-size:13px;color:var(--muted)}
+
+/* filters */
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.chip{border:1px solid var(--line-strong);background:var(--surface);border-radius:999px;padding:5px 11px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink-2)}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.search{flex:1;min-width:160px;border:1px solid var(--line-strong);background:var(--surface);border-radius:8px;padding:7px 10px}
+
+/* board */
+.board{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px}
+.lane{background:var(--sunk);border-radius:10px;padding:10px;min-width:0;display:flex;flex-direction:column;gap:8px}
+.lane h3{margin:0 2px 2px;font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);display:flex;justify-content:space-between}
+.lane h3 b{font-family:var(--mono);color:var(--ink-2)}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer;text-align:left;width:100%;display:flex;flex-direction:column;gap:5px;color:inherit}
+.tile:hover{border-color:var(--line-strong)}
+.tile .t{font-weight:600;font-size:14px;line-height:1.3}
+.tile .s{font-size:12.5px;color:var(--muted)}
+.tile .foot{display:flex;justify-content:space-between;align-items:center;gap:6px}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:20}
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);z-index:21;overflow-y:auto;
+  padding:calc(env(safe-area-inset-top,0px) + 16px) max(18px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 32px) 18px;
+  box-shadow:-12px 0 40px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:16px}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}}}
+.sheet .x{align-self:flex-end;border:0;background:var(--sunk);border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:600}
+.sheet h2{margin:0;font-family:var(--display);font-size:24px;font-weight:700;line-height:1.15;text-wrap:balance;font-variation-settings:'wdth' 85}
+.sheet .co{color:var(--ink-2);font-size:15px}
+.sec h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+dl.kv{display:grid;grid-template-columns:120px minmax(0,1fr);gap:6px 12px;margin:0;font-size:14px}
+dl.kv dt{color:var(--muted)}
+dl.kv dd{margin:0;overflow-wrap:anywhere}
+.prose{white-space:pre-wrap;font-size:14px;background:var(--sunk);border-radius:8px;padding:12px;max-height:320px;overflow:auto;overflow-wrap:anywhere}
+.tags{display:flex;flex-wrap:wrap;gap:5px}
+.tag{font-size:12px;background:var(--sunk);border-radius:5px;padding:2px 7px;color:var(--ink-2)}
+.timeline{display:flex;flex-direction:column;gap:0;border-left:2px solid var(--line);margin-left:5px}
+.ev{position:relative;padding:0 0 12px 16px;font-size:13.5px}
+.ev::before{content:"";position:absolute;left:-6px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--surface);border:2px solid var(--line-strong)}
+.ev.k-status_change::before{border-color:var(--accent)}
+.ev.k-error::before{border-color:var(--bad-fg)}
+.ev .w{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--muted)}
+.field input,.field select,.field textarea{border:1px solid var(--line-strong);background:var(--surface);border-radius:8px;padding:8px 10px;font-size:14px;color:var(--ink)}
+.field textarea{min-height:80px;resize:vertical}
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.form .full{grid-column:1/-1}
+@media (max-width:560px){.form{grid-template-columns:minmax(0,1fr)}}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink)}
+.check input{margin-top:3px;width:18px;height:18px;accent-color:var(--accent)}
+.check small{display:block;color:var(--muted)}
+.note{font-size:13px;color:var(--muted)}
+
+.banner{border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:14px;background:var(--warn-bg);color:var(--warn-fg)}
+.banner.bad{background:var(--bad-bg);color:var(--bad-fg)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 20px);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600;z-index:30;max-width:calc(100% - 32px)}
+.skel{height:14px;border-radius:4px;background:var(--sunk);margin:8px 0}
+.mono{font-family:var(--mono)}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <h1>Job Hunt Tracker</h1>
+      <small id="sub">Finder agents → applier → you</small>
+    </div>
+    <button class="btn small" id="refresh" type="button">Refresh</button>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+  </div>
+</header>
+<main class="wrap" id="main"></main>
+<div id="overlay"></div>
+<div id="toast-root"></div>
+
+<script>
+(() => {
+const CFG = { supabase: 'Supabase', project: 'abylyjqplyxrpexwyufi', actor: 'app' };
+
+const S = {
+  tab: 'overview', data: null, loading: true, err: null, mcp: null, noRuntime: false,
+  jobFilter: 'new', jobQuery: '', sheet: null, busy: false
+};
+try { const t = localStorage.getItem('jht-tab'); if(t) S.tab = t; } catch(e){}
+
+/* ---------- labels ---------- */
+const APP_STATUS = {
+  queued:      ['Queued', 'neutral'],
+  tailoring:   ['Tailoring CV', 'info'],
+  ready:       ['Needs approval', 'warn'],
+  approved:    ['Approved', 'accent'],
+  submitted:   ['Submitted', 'info'],
+  failed:      ['Failed', 'bad'],
+  acknowledged:['Acknowledged', 'info'],
+  screening:   ['Screening', 'plum'],
+  interview:   ['Interview', 'plum'],
+  offer:       ['Offer', 'good'],
+  accepted:    ['Accepted', 'good'],
+  rejected:    ['Rejected', 'bad'],
+  withdrawn:   ['Withdrawn', 'neutral'],
+  no_response: ['No response', 'neutral']
+};
+const JOB_STATUS = {
+  new: ['New', 'info'], shortlisted: ['Shortlisted', 'accent'], skipped: ['Skipped', 'neutral'],
+  applying: ['Applying', 'warn'], applied: ['Applied', 'good'], expired: ['Expired', 'neutral'], archived: ['Archived', 'neutral']
+};
+const LANES = [
+  ['Preparing', ['queued','tailoring']],
+  ['Your approval', ['ready','approved','failed']],
+  ['Sent', ['submitted','acknowledged','no_response']],
+  ['Talking', ['screening','interview','offer']],
+  ['Closed', ['accepted','rejected','withdrawn']]
+];
+const OUTCOMES = ['acknowledged','screening','interview','offer','accepted','rejected','no_response'];
+const METHOD = {email:'Email', web_form:'Web form', ats:'ATS portal', easy_apply:'Easy Apply', referral:'Referral', other:'Other'};
+const MODE = {remote:'Remote', hybrid:'Hybrid', onsite:'On-site'};
+
+/* ---------- helpers ---------- */
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const q = v => (v === null || v === undefined || v === '') ? 'null' : "'" + String(v).replace(/'/g, "''") + "'";
+const qn = v => { const n = Number(v); return (v === '' || v === null || v === undefined || !isFinite(n)) ? 'null' : String(Math.round(n)); };
+const qarr = a => 'array[' + (a || []).map(q).join(',') + ']::text[]';
+const pill = (map, s) => { const m = map[s] || [s, 'neutral']; return `<span class="pill ${m[1]}">${esc(m[0])}</span>`; };
+const scoreEl = n => n == null ? '<span class="score lo">–</span>' : `<span class="score ${n >= 80 ? 'hi' : n < 60 ? 'lo' : ''}">${n}</span>`;
+function ago(ts){
+  if(!ts) return '';
+  const d = (Date.now() - new Date(ts).getTime()) / 1000;
+  if(d < 60) return 'now';
+  if(d < 3600) return Math.floor(d/60) + 'm ago';
+  if(d < 86400) return Math.floor(d/3600) + 'h ago';
+  if(d < 86400*7) return Math.floor(d/86400) + 'd ago';
+  return new Date(ts).toLocaleDateString(undefined, {month:'short', day:'numeric'});
+}
+const fmtDate = ts => ts ? new Date(ts).toLocaleString(undefined, {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : '';
+const fmtDay = d => d ? new Date(d + (String(d).length === 10 ? 'T12:00:00' : '')).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : '';
+function salary(j){
+  if(!j.salary_min && !j.salary_max) return '';
+  const k = n => n >= 1000 ? Math.round(n/1000) + 'k' : n;
+  const r = j.salary_min && j.salary_max ? `${k(j.salary_min)}–${k(j.salary_max)}` : k(j.salary_min || j.salary_max);
+  return `${j.salary_currency || ''} ${r}`.trim();
+}
+const linkOut = (u, label) => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(label || u)}</a>` : '';
+function toast(msg){
+  const r = document.getElementById('toast-root');
+  r.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`;
+  clearTimeout(toast.t); toast.t = setTimeout(() => r.innerHTML = '', 2600);
+}
+
+/* ---------- connector calls ---------- */
+const ERR_COPY = {
+  needs_reauth: 'Reconnect Supabase in claude.ai Settings → Connectors, then tap Refresh.',
+  server_not_connected: 'Add the Supabase connector in claude.ai Settings → Connectors, then tap Refresh.',
+  selection_required: 'Choose which Supabase account this page should use, then tap Refresh.',
+  not_in_manifest: 'Supabase is switched off for this page. Allow it from the page\'s permissions, then tap Refresh.',
+  blocked_by_policy: 'Your organization blocks this Supabase action.',
+  approval_required: 'This page needs your approval to use Supabase. Tap Refresh and allow it.',
+  not_granted: 'Connectors are not available in this view. Open the tracker inside Claude.',
+  capability_disabled: 'Connectors are not available in this view. Open the tracker inside Claude.'
+};
+function errText(e){
+  const c = e && e.code;
+  if(ERR_COPY[c]) return ERR_COPY[c];
+  if(c === 'tool_error') return 'Supabase said: ' + (e.message || 'the request failed') ;
+  if(c === 'server_unavailable' || c === 'upstream_error') return 'Couldn\'t reach Supabase just now. Tap Refresh to try again.';
+  return (e && e.message) || 'Something went wrong talking to Supabase.';
+}
+function rowsFrom(p){
+  if(Array.isArray(p)) return p;
+  const t = typeof p === 'string' ? p : (p && (p.result || p.text)) || '';
+  if(typeof t !== 'string') return Array.isArray(t) ? t : [];
+  const m = t.match(/<untrusted-data-[^>]*>\s*([\s\S]*?)\s*<\/untrusted-data-/);
+  const body = m ? m[1] : t;
+  const i = body.indexOf('['), j = body.lastIndexOf(']');
+  if(i < 0 || j < i) return [];
+  return JSON.parse(body.slice(i, j + 1));
+}
+async function sql(query, write){
+  let r;
+  try { r = await S.mcp.callTool(CFG.supabase, 'execute_sql', {project_id: CFG.project, query}, {cache:false}); }
+  catch(e){
+    if(!write && e && e.retryable){
+      await new Promise(res => setTimeout(res, (e.retryAfterMs || 1500) + Math.random()*800));
+      r = await S.mcp.callTool(CFG.supabase, 'execute_sql', {project_id: CFG.project, query}, {cache:false});
+    } else throw e;
+  }
+  const p = r.payload !== undefined ? r.payload : r;
+  const t = typeof p === 'string' ? p : (p && p.result) || '';
+  if(typeof t === 'string' && /^\s*(ERROR|error)[:\s]/.test(t)) throw {code:'tool_error', message:t.slice(0,300)};
+  return rowsFrom(p);
+}
+
+/* ---------- queries ---------- */
+const Q_ALL = `
+select json_build_object(
+  'profile', (select row_to_json(p) from jobs.profile p where id = 1),
+  'counts', json_build_object(
+    'found', (select count(*) from jobs.jobs),
+    'found_week', (select count(*) from jobs.jobs where created_at >= now() - interval '7 days'),
+    'new', (select count(*) from jobs.jobs where status = 'new'),
+    'shortlisted', (select count(*) from jobs.jobs where status = 'shortlisted'),
+    'applied', (select count(*) from jobs.applications where submitted_at is not null),
+    'applied_week', (select count(*) from jobs.applications where submitted_at >= now() - interval '7 days'),
+    'responses', (select count(*) from jobs.applications where status in ('acknowledged','screening','interview','offer','accepted','rejected')),
+    'talking', (select count(*) from jobs.applications where status in ('screening','interview','offer','accepted')),
+    'interviews', (select count(*) from jobs.applications where status in ('interview','offer','accepted')
+                     or exists (select 1 from jobs.events e where e.application_id = applications.id and e.to_status = 'interview')),
+    'offers', (select count(*) from jobs.applications where status in ('offer','accepted'))
+  ),
+  'daily', (select json_agg(json_build_object('d', d::date,
+              'f', (select count(*) from jobs.jobs where created_at::date = d::date),
+              'a', (select count(*) from jobs.applications where submitted_at::date = d::date)) order by d)
+            from generate_series(current_date - 13, current_date, interval '1 day') d),
+  'apps', (select coalesce(json_agg(x order by x.updated_at desc), '[]') from (
+            select a.id, a.status, a.method, a.submitted_at, a.follow_up_at, a.next_step, a.next_step_at,
+                   a.error, a.updated_at, a.response_summary, j.id as job_id, j.title, j.company_name, j.location, j.match_score
+            from jobs.applications a join jobs.jobs j on j.id = a.job_id order by a.updated_at desc limit 300) x),
+  'jobs', (select coalesce(json_agg(x order by x.created_at desc), '[]') from (
+            select id, title, company_name, location, work_mode, match_score, status, found_by, created_at, source,
+                   salary_min, salary_max, salary_currency, apply_method, closes_at, times_seen
+            from jobs.jobs order by created_at desc limit 400) x),
+  'runs', (select coalesce(json_agg(x order by x.started_at desc), '[]') from (
+            select id, agent, started_at, finished_at, status, jobs_found, jobs_new, applications_submitted, error, searches
+            from jobs.agent_runs order by started_at desc limit 40) x)
+) as data;`;
+
+async function load(){
+  if(!S.mcp) return render();
+  S.loading = true; S.err = null; renderHeaderBits();
+  try {
+    const rows = await sql(Q_ALL);
+    const d = rows[0] && rows[0].data;
+    S.data = typeof d === 'string' ? JSON.parse(d) : d;
+    S.loadedAt = Date.now();
+  } catch(e){ S.err = errText(e); }
+  S.loading = false;
+  render();
+}
+
+async function openJob(id){
+  S.sheet = {kind:'job', id, loading:true}; renderSheet();
+  try {
+    const rows = await sql(`select row_to_json(j) as j,
+      (select coalesce(json_agg(e order by e.at desc), '[]') from jobs.events e where e.job_id = j.id) as events,
+      (select a.id from jobs.applications a where a.job_id = j.id) as app_id
+      from jobs.jobs j where j.id = ${qn(id)}`);
+    const r = rows[0];
+    if(!r){ S.sheet = {kind:'job', id, err:'This job no longer exists.'}; return renderSheet(); }
+    S.sheet = {kind:'job', id, job: parse(r.j), events: parse(r.events), appId: r.app_id};
+  } catch(e){ S.sheet = {kind:'job', id, err: errText(e)}; }
+  renderSheet();
+}
+async function openApp(id){
+  S.sheet = {kind:'app', id, loading:true}; renderSheet();
+  try {
+    const rows = await sql(`select row_to_json(a) as a, row_to_json(j) as j, row_to_json(cv) as cv,
+      (select coalesce(json_agg(e order by e.at desc), '[]') from jobs.events e where e.application_id = a.id or (e.job_id = a.job_id and e.application_id is null)) as events
+      from jobs.applications a join jobs.jobs j on j.id = a.job_id
+      left join jobs.cv_versions cv on cv.id = a.cv_version_id
+      where a.id = ${qn(id)}`);
+    const r = rows[0];
+    if(!r){ S.sheet = {kind:'app', id, err:'This application no longer exists.'}; return renderSheet(); }
+    S.sheet = {kind:'app', id, app: parse(r.a), job: parse(r.j), cv: parse(r.cv), events: parse(r.events)};
+  } catch(e){ S.sheet = {kind:'app', id, err: errText(e)}; }
+  renderSheet();
+}
+const parse = v => typeof v === 'string' ? JSON.parse(v) : v;
+
+/* ---------- writes ---------- */
+async function write(query, done, reopen){
+  if(S.busy) return;
+  S.busy = true; renderSheet();
+  try {
+    await sql(query, true);
+    toast(done);
+    await load();
+    if(reopen) await reopen();
+  } catch(e){
+    toast(errText(e));
+  }
+  S.busy = false; renderSheet();
+}
+const setJobStatus = (id, status, reason) => write(
+  `update jobs.jobs set status = ${q(status)}, status_reason = ${q(reason)} where id = ${qn(id)} and status in ('new','shortlisted','skipped');
+   insert into jobs.events (job_id, kind, actor, detail) values (${qn(id)}, 'note', ${q(CFG.actor)}, ${q((status === 'shortlisted' ? 'Shortlisted' : 'Skipped') + (reason ? ': ' + reason : ''))});`,
+  status === 'shortlisted' ? 'Shortlisted. The applier picks it up on its next run.' : 'Skipped',
+  S.sheet && S.sheet.kind === 'job' ? () => openJob(id) : null);
+const setAppStatus = (id, status, note, extra, msg) => write(
+  `select jobs.set_application_status(${qn(id)}, ${q(status)}, ${q(CFG.actor)}, ${q(note)});` + (extra || ''),
+  msg || ('Marked ' + (APP_STATUS[status] || [status])[0].toLowerCase()),
+  () => openApp(id));
+
+/* ---------- rendering ---------- */
+function renderHeaderBits(){
+  const d = S.data, c = d && d.counts;
+  const needs = d ? d.apps.filter(a => a.status === 'ready' || a.status === 'failed').length : 0;
+  const tabs = [
+    ['overview','Overview', needs, needs > 0],
+    ['jobs','Jobs found', c ? c.new : null, false],
+    ['apps','Applications', d ? d.apps.length : null, false],
+    ['agents','Agents', null, false],
+    ['profile','Profile & rules', null, false]
+  ];
+  document.getElementById('tabs').innerHTML = tabs.map(([k, l, n, hot]) =>
+    `<button class="tab" role="tab" type="button" data-tab="${k}" aria-selected="${S.tab === k}">${l}${n ? `<span class="n${hot ? ' hot' : ''}">${n}</span>` : ''}</button>`).join('');
+  document.getElementById('sub').textContent = S.loading ? 'Loading…' : S.loadedAt ? 'Updated ' + new Date(S.loadedAt).toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'}) : 'Finder agents → applier → you';
+  const r = document.getElementById('refresh'); r.disabled = S.loading || !S.mcp;
+}
+
+function render(){
+  renderHeaderBits();
+  const m = document.getElementById('main');
+  if(S.noRuntime){
+    m.innerHTML = `<div class="banner">This tracker reads your Supabase database through Claude's connectors. Open it inside Claude with the Supabase connector added to see your jobs and applications.</div>` + skeleton();
+    return;
+  }
+  let html = S.err ? `<div class="banner bad">${esc(S.err)}</div>` : '';
+  if(!S.data){ m.innerHTML = html + skeleton(); return; }
+  html += ({overview: vOverview, jobs: vJobs, apps: vApps, agents: vAgents, profile: vProfile}[S.tab] || vOverview)();
+  m.innerHTML = html;
+}
+function skeleton(){
+  return `<div class="grid"><div class="card">${'<div class="skel"></div>'.repeat(3)}</div><div class="card">${'<div class="skel"></div>'.repeat(5)}</div></div>`;
+}
+
+function vOverview(){
+  const d = S.data, c = d.counts, p = d.profile || {};
+  const rate = (a, b) => b ? Math.round(a * 100 / b) + '%' : '';
+  const kpis = [
+    [c.found, 'Jobs found', `+${c.found_week} this week`],
+    [c.shortlisted, 'Shortlisted', 'waiting for applier'],
+    [c.applied, 'Applied', `+${c.applied_week} this week`],
+    [c.responses, 'Heard back', rate(c.responses, c.applied)],
+    [c.interviews, 'Interviews', rate(c.interviews, c.applied)],
+    [c.offers, 'Offers', '']
+  ];
+  const needs = d.apps.filter(a => a.status === 'ready' || a.status === 'failed');
+  const today = new Date().toISOString().slice(0,10);
+  const followUps = d.apps.filter(a => a.follow_up_at && a.follow_up_at <= today && ['submitted','acknowledged'].includes(a.status));
+  const upcoming = d.apps.filter(a => a.next_step_at && new Date(a.next_step_at) >= new Date(Date.now() - 86400000)).sort((a,b) => a.next_step_at.localeCompare(b.next_step_at));
+  const topNew = d.jobs.filter(j => j.status === 'new').sort((a,b) => (b.match_score ?? -1) - (a.match_score ?? -1)).slice(0, 6);
+
+  const max = Math.max(1, ...d.daily.map(x => Math.max(x.f, x.a)));
+  const chart = `<div class="chart" role="img" aria-label="Jobs found and applications sent per day, last 14 days">${d.daily.map(x =>
+      `<div class="day" title="${fmtDay(x.d)}: ${x.f} found, ${x.a} applied"><div class="b f" style="height:${x.f*100/max}%"></div><div class="b a" style="height:${x.a*100/max}%"></div></div>`).join('')}</div>
+    <div class="chart-x">${d.daily.map((x, i) => `<span>${i % 2 === 1 ? '' : new Date(x.d + 'T12:00:00').getDate()}</span>`).join('')}</div>
+    <div class="legend"><span><i style="background:var(--bar-2)"></i>Found</span><span><i style="background:var(--bar)"></i>Applied</span><span style="margin-left:auto">peak ${max}/day</span></div>`;
+
+  const steps = [['Found', c.found], ['Shortlisted+', c.shortlisted + d.apps.length], ['Applied', c.applied], ['Heard back', c.responses], ['Interview', c.interviews], ['Offer', c.offers]];
+  const fmax = Math.max(1, steps[0][1]);
+  const funnel = `<div class="funnel">${steps.map(([l, n]) => `<div class="fstep"><span>${l}</span><div class="track"><div class="fill" style="width:${n*100/fmax}%"></div></div><b>${n}</b></div>`).join('')}</div>`;
+
+  return `<div class="grid">
+    <div class="kpis">${kpis.map(([n, l, s]) => `<div class="kpi"><b>${n}</b><span>${l}</span>${s ? `<div><span class="rate">${esc(s)}</span></div>` : ''}</div>`).join('')}</div>
+    <div class="cols">
+      <div class="grid">
+        <div class="card"><h2>Needs you <span class="aside">${p.require_approval ? 'Approval is on: nothing is sent until you approve' : 'Approval is off: the applier submits ready applications'}</span></h2>
+          ${needs.length ? `<div class="rows">${needs.map(appRow).join('')}</div>` : `<div class="empty">Nothing waiting. Applications the applier prepares show here for approval.</div>`}
+          ${followUps.length ? `<h2 style="margin-top:16px">Follow-up due</h2><div class="rows">${followUps.map(appRow).join('')}</div>` : ''}
+        </div>
+        <div class="card"><h2>Best new matches <span class="aside"><button class="btn small" data-tab="jobs" type="button">All jobs</button></span></h2>
+          ${topNew.length ? `<div class="rows">${topNew.map(jobRow).join('')}</div>` : `<div class="empty">No new jobs to review. Your finder agents add them here.</div>`}
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card"><h2>Last 14 days</h2>${chart}</div>
+        <div class="card"><h2>Funnel</h2>${funnel}</div>
+        ${upcoming.length ? `<div class="card"><h2>Coming up</h2><div class="rows">${upcoming.slice(0,5).map(a => `<button class="row" type="button" data-app="${a.id}"><div class="main"><div class="t">${esc(a.next_step || 'Next step')}</div><div class="s">${esc(a.title)} · ${esc(a.company_name)}</div></div><div class="end"><span class="when">${fmtDate(a.next_step_at)}</span></div></button>`).join('')}</div></div>` : ''}
+        <div class="card"><h2>Agents</h2>${agentSummary()}</div>
+      </div>
+    </div>
+  </div>`;
+}
+function appRow(a){
+  return `<button class="row" type="button" data-app="${a.id}">${scoreEl(a.match_score)}<div class="main"><div class="t">${esc(a.title)}</div><div class="s">${esc(a.company_name)}${a.location ? ' · ' + esc(a.location) : ''}${a.status === 'failed' && a.error ? ' · ' + esc(a.error) : ''}</div></div>
+    <div class="end">${pill(APP_STATUS, a.status)}<span class="when">${ago(a.submitted_at || a.updated_at)}</span></div></button>`;
+}
+function jobRow(j){
+  const bits = [j.company_name, j.location, MODE[j.work_mode], salary(j)].filter(Boolean).map(esc).join(' · ');
+  return `<button class="row" type="button" data-job="${j.id}">${scoreEl(j.match_score)}<div class="main"><div class="t">${esc(j.title)}</div><div class="s">${bits}</div></div>
+    <div class="end">${pill(JOB_STATUS, j.status)}<span class="when">${ago(j.created_at)}</span></div></button>`;
+}
+function agentSummary(){
+  const runs = S.data.runs;
+  if(!runs.length) return `<div class="empty">No runs logged yet. Each agent writes a row to <span class="mono">jobs.agent_runs</span> when it runs.</div>`;
+  const latest = {};
+  runs.forEach(r => { if(!latest[r.agent]) latest[r.agent] = r; });
+  return Object.values(latest).map(r => `<div class="agent"><span class="nm">${esc(agentName(r.agent))}</span>${runPill(r)}
+    <span class="meta">${ago(r.started_at)} · ${runCounts(r)}</span></div>`).join('');
+}
+const agentName = a => ({job_finder_1:'Job finder 1', job_finder_2:'Job finder 2', applier:'Applier'}[a] || a);
+const runPill = r => `<span class="pill ${({success:'good', partial:'warn', failed:'bad', running:'info'})[r.status] || ''}">${esc(r.status === 'success' ? 'OK' : r.status[0].toUpperCase() + r.status.slice(1))}</span>`;
+const runCounts = r => r.agent === 'applier' ? `${r.applications_submitted} submitted` : `${r.jobs_found} found, ${r.jobs_new} new`;
+
+function vJobs(){
+  const d = S.data;
+  const filters = [['new','New'], ['shortlisted','Shortlisted'], ['applying','Applying'], ['applied','Applied'], ['skipped','Skipped'], ['all','All']];
+  const cnt = k => k === 'all' ? d.jobs.length : d.jobs.filter(j => j.status === k).length;
+  const qx = S.jobQuery.trim().toLowerCase();
+  let list = d.jobs.filter(j => (S.jobFilter === 'all' || j.status === S.jobFilter) && (!qx || (j.title + ' ' + j.company_name + ' ' + (j.location || '')).toLowerCase().includes(qx)));
+  if(S.jobFilter === 'new' || S.jobFilter === 'shortlisted') list = list.slice().sort((a,b) => (b.match_score ?? -1) - (a.match_score ?? -1));
+  return `<div class="cols">
+    <div class="card">
+      <div class="filters">${filters.map(([k, l]) => `<button class="chip" type="button" data-jf="${k}" aria-pressed="${S.jobFilter === k}">${l} ${cnt(k)}</button>`).join('')}</div>
+      <div class="filters"><input class="search" id="jq" type="search" placeholder="Search title, company, location" value="${esc(S.jobQuery)}"></div>
+      ${list.length ? `<div class="rows">${list.map(jobRow).join('')}</div>` : `<div class="empty">No jobs here.</div>`}
+    </div>
+    <div class="grid">
+      <div class="card"><h2>How jobs move</h2>
+        <p class="note" style="margin:0">Finder agents add jobs as <b>New</b> with a match score. Shortlist the ones you want and the applier tailors your CV for them on its next run. ${d.profile && d.profile.auto_shortlist ? `Auto-shortlist is on: new jobs scoring ${d.profile.min_match_score}+ skip straight to Shortlisted.` : 'Turn on auto-shortlist under Profile & rules to skip this step for strong matches.'}</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function vApps(){
+  const apps = S.data.apps;
+  if(!apps.length) return `<div class="card"><div class="empty">No applications yet. When the applier picks up a shortlisted job it appears here, from CV tailoring through to the employer's answer.</div></div>`;
+  return `<div class="board">${LANES.map(([name, sts]) => {
+    const items = apps.filter(a => sts.includes(a.status));
+    return `<section class="lane"><h3>${name} <b>${items.length}</b></h3>${items.map(a => `<button class="tile" type="button" data-app="${a.id}">
+      <span class="t">${esc(a.title)}</span><span class="s">${esc(a.company_name)}${a.method ? ' · ' + esc(METHOD[a.method] || a.method) : ''}</span>
+      <span class="foot">${pill(APP_STATUS, a.status)}<span class="when mono" style="font-size:11.5px;color:var(--muted)">${ago(a.submitted_at || a.updated_at)}</span></span></button>`).join('') || '<span class="note" style="padding:4px">None</span>'}</section>`;
+  }).join('')}</div>`;
+}
+
+function vAgents(){
+  const runs = S.data.runs;
+  return `<div class="cols"><div class="card"><h2>Recent runs</h2>${runs.length ? `<div class="rows">${runs.map(r => `<div class="agent">
+      <span class="nm">${esc(agentName(r.agent))} <span class="note mono">#${r.id}</span></span>${runPill(r)}
+      <span class="meta">${fmtDate(r.started_at)}${r.finished_at ? ' · took ' + Math.max(1, Math.round((new Date(r.finished_at) - new Date(r.started_at))/60000)) + ' min' : ''} · ${runCounts(r)}${r.searches && r.searches.length ? '<br>Searched: ' + r.searches.map(esc).join(', ') : ''}${r.error ? `<br><span style="color:var(--bad-fg)">${esc(r.error)}</span>` : ''}</span></div>`).join('')}</div>` : `<div class="empty">No runs logged yet.</div>`}</div>
+    <div class="card"><h2>What each agent does</h2>
+      <dl class="kv">
+        <dt>Job finder 1 &amp; 2</dt><dd>Search the web with your profile, score each posting against your CV and save it with <span class="mono">jobs.upsert_job</span>. Duplicates are merged.</dd>
+        <dt>Applier</dt><dd>Takes shortlisted jobs from <span class="mono">jobs.next_to_apply()</span>, tailors your CV, writes the email or form answers, and marks them <b>Needs approval</b>. Submits only what <span class="mono">jobs.ready_to_submit()</span> returns.</dd>
+      </dl>
+      <p class="note">Full instructions for the agents are in <span class="mono">job-tracker/AGENTS.md</span>.</p>
+    </div></div>`;
+}
+
+function vProfile(){
+  const p = S.data.profile || {};
+  const list = a => (a || []).join(', ');
+  return `<form id="profile" class="card">
+    <h2>Profile & rules <span class="aside">The agents read this before every run</span></h2>
+    <div class="form">
+      <label class="field">Full name<input id="p-name" value="${esc(p.full_name)}"></label>
+      <label class="field">Email<input id="p-email" type="email" value="${esc(p.email)}"></label>
+      <label class="field">Phone<input id="p-phone" value="${esc(p.phone)}"></label>
+      <label class="field">Based in<input id="p-loc" value="${esc(p.location)}"></label>
+      <label class="field">LinkedIn<input id="p-li" value="${esc(p.linkedin_url)}"></label>
+      <label class="field">Portfolio / website<input id="p-web" value="${esc(p.portfolio_url)}"></label>
+      <label class="field full">Headline<input id="p-head" value="${esc(p.headline)}" placeholder="e.g. Data analyst, 5 years in retail analytics"></label>
+      <label class="field full">Target job titles (comma separated)<input id="p-titles" value="${esc(list(p.target_titles))}"></label>
+      <label class="field">Target locations<input id="p-locs" value="${esc(list(p.target_locations))}"></label>
+      <label class="field">Work mode<select id="p-mode">${['any','remote','hybrid','onsite'].map(m => `<option value="${m}"${p.remote_preference === m ? ' selected' : ''}>${m === 'any' ? 'Any' : MODE[m]}</option>`).join('')}</select></label>
+      <label class="field">Keywords to look for<input id="p-kw" value="${esc(list(p.keywords))}"></label>
+      <label class="field">Skip jobs mentioning<input id="p-xkw" value="${esc(list(p.exclude_keywords))}"></label>
+      <label class="field">Skip companies<input id="p-xco" value="${esc(list(p.exclude_companies))}"></label>
+      <label class="field">Minimum salary<input id="p-sal" inputmode="numeric" value="${esc(p.min_salary)}"></label>
+      <label class="field full">Master CV link<input id="p-cvurl" value="${esc(p.base_cv_url)}" placeholder="Google Drive link"></label>
+      <label class="field full">Master CV text (the agents score jobs against this; the applier tailors a formatted copy of it)<textarea id="p-cv" rows="8">${esc(p.base_cv_text)}</textarea></label>
+      <label class="field full">Standard answers for application forms (the applier only uses what is written here; a required question it can't answer is left for you)<textarea id="p-ans" rows="7" placeholder="Work authorization in Canada: 
+Work authorization in the US: 
+Willing to work as a contractor through my corporation: 
+Hourly rate / salary expectation: 
+Notice period / start date: 
+Hours available per week: 
+LinkedIn: 
+GitHub / portfolio: 
+How did you hear about us: Job board">${esc(p.standard_answers)}</textarea></label>
+      <label class="field">Minimum match score<input id="p-min" type="number" min="0" max="100" value="${esc(p.min_match_score)}"></label>
+      <label class="field">Applications per day (max)<input id="p-daily" type="number" min="0" max="100" value="${esc(p.daily_apply_limit)}"></label>
+      <label class="check full"><input id="p-auto" type="checkbox"${p.auto_shortlist ? ' checked' : ''}><span>Auto-shortlist strong matches<small>New jobs at or above the minimum match score go straight to the applier.</small></span></label>
+      <label class="check full"><input id="p-appr" type="checkbox"${p.require_approval !== false ? ' checked' : ''}><span>Approve every application before it is sent<small>When off, the applier submits as soon as the CV and email are ready.</small></span></label>
+      <div class="full btnrow"><button class="btn primary" type="submit">Save</button><span class="note">Last saved ${p.updated_at ? fmtDate(p.updated_at) : 'never'}</span></div>
+    </div>
+  </form>`;
+}
+
+/* ---------- sheet ---------- */
+function renderSheet(){
+  const o = document.getElementById('overlay');
+  const sh = S.sheet;
+  if(!sh){ o.innerHTML = ''; document.body.style.overflow = ''; return; }
+  document.body.style.overflow = 'hidden';
+  let inner;
+  if(sh.loading) inner = '<div class="skel"></div>'.repeat(6);
+  else if(sh.err) inner = `<div class="banner bad">${esc(sh.err)}</div>`;
+  else inner = sh.kind === 'job' ? jobSheet(sh) : appSheet(sh);
+  o.innerHTML = `<div class="scrim" data-close></div><aside class="sheet" role="dialog" aria-modal="true" aria-label="Details"><button class="x" type="button" data-close>Close</button>${inner}</aside>`;
+}
+function timeline(events){
+  if(!events || !events.length) return '<div class="empty">No events yet.</div>';
+  return `<div class="timeline">${events.map(e => {
+    const what = e.kind === 'status_change' ? (e.from_status ? `${(APP_STATUS[e.from_status]||[e.from_status])[0]} → ` : 'Created as ') + (APP_STATUS[e.to_status]||[e.to_status])[0]
+      : ({found:'Found', cv_tailored:'CV tailored', email_sent:'Email sent', form_submitted:'Form submitted', email_received:'Reply received', interview_scheduled:'Interview scheduled', follow_up:'Follow-up', note:'Note', error:'Error'})[e.kind] || e.kind;
+    return `<div class="ev k-${esc(e.kind)}"><div><b>${esc(what)}</b>${e.actor ? ` <span class="note">by ${esc(agentName(e.actor))}</span>` : ''}</div>${e.detail ? `<div>${esc(e.detail)}</div>` : ''}<div class="w">${fmtDate(e.at)}</div></div>`;
+  }).join('')}</div>`;
+}
+function jobSheet({job: j, events, appId}){
+  const can = ['new','shortlisted','skipped'].includes(j.status);
+  return `<div><div class="btnrow" style="margin-bottom:8px">${pill(JOB_STATUS, j.status)} ${scoreEl(j.match_score)}</div>
+      <h2>${esc(j.title)}</h2><div class="co">${esc(j.company_name)}${j.location ? ' · ' + esc(j.location) : ''}</div></div>
+    <div class="btnrow">
+      ${can && j.status !== 'shortlisted' ? `<button class="btn primary" type="button" data-act="shortlist" ${S.busy ? 'disabled' : ''}>Shortlist</button>` : ''}
+      ${can && j.status !== 'skipped' ? `<button class="btn" type="button" data-act="skip" ${S.busy ? 'disabled' : ''}>Skip</button>` : ''}
+      ${appId ? `<button class="btn primary" type="button" data-app="${appId}">Open application</button>` : ''}
+      ${linkOut(j.url) ? `<a class="btn" href="${esc(j.url)}" target="_blank" rel="noopener">Open posting ↗</a>` : ''}
+    </div>
+    ${can ? `<label class="field">Reason (optional, the agents learn from it)<input id="js-reason" placeholder="e.g. too junior, wrong city"></label>` : ''}
+    <div class="sec"><h4>Details</h4><dl class="kv">
+      ${j.work_mode ? `<dt>Work mode</dt><dd>${MODE[j.work_mode]}</dd>` : ''}
+      ${j.employment_type ? `<dt>Type</dt><dd>${esc(j.employment_type.replace('_',' '))}</dd>` : ''}
+      ${j.seniority ? `<dt>Level</dt><dd>${esc(j.seniority)}</dd>` : ''}
+      ${salary(j) ? `<dt>Salary</dt><dd>${esc(salary(j))}</dd>` : ''}
+      ${j.apply_method ? `<dt>Apply by</dt><dd>${esc(METHOD[j.apply_method])}${j.apply_email ? ' · ' + esc(j.apply_email) : ''}${j.apply_url ? ' · ' + linkOut(j.apply_url, 'form') : ''}</dd>` : ''}
+      ${j.contact_name || j.contact_email ? `<dt>Contact</dt><dd>${esc([j.contact_name, j.contact_email].filter(Boolean).join(' · '))}</dd>` : ''}
+      ${j.posted_at ? `<dt>Posted</dt><dd>${fmtDay(j.posted_at)}</dd>` : ''}
+      ${j.closes_at ? `<dt>Closes</dt><dd>${fmtDay(j.closes_at)}</dd>` : ''}
+      <dt>Found by</dt><dd>${esc(agentName(j.found_by || 'unknown'))}${j.source ? ' on ' + esc(j.source) : ''} · ${fmtDate(j.created_at)}${j.times_seen > 1 ? ` · seen ${j.times_seen}×` : ''}</dd>
+      ${j.status_reason ? `<dt>Reason</dt><dd>${esc(j.status_reason)}</dd>` : ''}
+    </dl></div>
+    ${j.match_reasons ? `<div class="sec"><h4>Why it matches</h4><div>${esc(j.match_reasons)}</div></div>` : ''}
+    ${j.missing_skills && j.missing_skills.length ? `<div class="sec"><h4>Gaps</h4><div class="tags">${j.missing_skills.map(s => `<span class="tag">${esc(s)}</span>`).join('')}</div></div>` : ''}
+    ${j.description ? `<div class="sec"><h4>Description</h4><div class="prose">${esc(j.description)}</div></div>` : ''}
+    ${j.requirements ? `<div class="sec"><h4>Requirements</h4><div class="prose">${esc(j.requirements)}</div></div>` : ''}
+    <div class="sec"><h4>History</h4>${timeline(events)}</div>`;
+}
+function appSheet({app: a, job: j, cv, events}){
+  const b = S.busy ? 'disabled' : '';
+  const acts = [];
+  if(a.status === 'ready') acts.push(`<button class="btn primary" type="button" data-act="approve" ${b}>Approve and send</button>`, `<button class="btn" type="button" data-act="sendback" ${b}>Send back with note</button>`);
+  if(a.status === 'approved') acts.push(`<button class="btn" type="button" data-act="unapprove" ${b}>Undo approval</button>`);
+  if(a.status === 'failed') acts.push(`<button class="btn primary" type="button" data-act="retry" ${b}>Retry</button>`);
+  if(['queued','tailoring','ready','approved','failed'].includes(a.status)) acts.push(`<button class="btn danger" type="button" data-act="withdraw" ${b}>Withdraw</button>`);
+  const sent = ['submitted','acknowledged','screening','interview','offer','no_response'].includes(a.status);
+  const answers = Array.isArray(a.form_answers) ? a.form_answers : [];
+  return `<div><div class="btnrow" style="margin-bottom:8px">${pill(APP_STATUS, a.status)} ${scoreEl(j.match_score)}</div>
+      <h2>${esc(j.title)}</h2><div class="co">${esc(j.company_name)}${j.location ? ' · ' + esc(j.location) : ''}</div></div>
+    ${a.status === 'failed' && a.error ? `<div class="banner bad">${esc(a.error)}</div>` : ''}
+    ${acts.length ? `<div class="btnrow">${acts.join('')}</div>` : ''}
+    ${a.status === 'ready' ? `<label class="field">Note for the applier (used with Send back)<textarea id="as-note" rows="2" placeholder="e.g. lead with the Shopify project, shorten the cover letter"></textarea></label>` : ''}
+    ${sent ? `<div class="sec"><h4>Record the employer's answer</h4><div class="form">
+        <label class="field">New status<select id="as-out">${OUTCOMES.map(s => `<option value="${s}"${s === a.status ? ' selected' : ''}>${APP_STATUS[s][0]}</option>`).join('')}</select></label>
+        <label class="field">Next step date<input id="as-when" type="datetime-local"></label>
+        <label class="field full">Next step<input id="as-next" placeholder="e.g. Phone screen with Priya" value="${esc(a.next_step)}"></label>
+        <label class="field full">Note<input id="as-onote" placeholder="What they said"></label>
+        <div class="full btnrow"><button class="btn primary" type="button" data-act="outcome" ${b}>Save</button><button class="btn danger" type="button" data-act="withdraw" ${b}>Withdraw</button></div>
+      </div></div>` : ''}
+    <div class="sec"><h4>Submission</h4><dl class="kv">
+      <dt>Method</dt><dd>${esc(METHOD[a.method] || a.method || 'Not chosen yet')}</dd>
+      ${a.email_to ? `<dt>To</dt><dd>${esc(a.email_to)}</dd>` : ''}
+      ${a.form_url ? `<dt>Form</dt><dd>${linkOut(a.form_url, 'Open form ↗')}</dd>` : ''}
+      ${a.approved_at ? `<dt>Approved</dt><dd>${fmtDate(a.approved_at)}${a.approved_by ? ' by ' + esc(a.approved_by) : ''}</dd>` : ''}
+      ${a.submitted_at ? `<dt>Submitted</dt><dd>${fmtDate(a.submitted_at)}${a.attempts > 1 ? ` · ${a.attempts} attempts` : ''}</dd>` : ''}
+      ${a.confirmation_ref ? `<dt>Confirmation</dt><dd>${/^https?:/.test(a.confirmation_ref) ? linkOut(a.confirmation_ref, 'View ↗') : esc(a.confirmation_ref)}</dd>` : ''}
+      ${a.follow_up_at ? `<dt>Follow up</dt><dd>${fmtDay(a.follow_up_at)}</dd>` : ''}
+      ${a.next_step ? `<dt>Next step</dt><dd>${esc(a.next_step)}${a.next_step_at ? ' · ' + fmtDate(a.next_step_at) : ''}</dd>` : ''}
+      ${a.response_summary ? `<dt>Their reply</dt><dd>${esc(a.response_summary)}</dd>` : ''}
+      <dt>Posting</dt><dd>${linkOut(j.url, 'Open ↗')}</dd>
+    </dl></div>
+    <div class="sec"><h4>Tailored CV</h4>${cv ? `<dl class="kv">
+        <dt>Version</dt><dd>${esc(cv.label || '#' + cv.id)}${cv.file_url ? ' · ' + linkOut(cv.file_url, 'Open CV ↗') : ''}</dd>
+        ${cv.ats_score != null ? `<dt>ATS score</dt><dd>${cv.ats_score}</dd>` : ''}
+        ${cv.changes_summary ? `<dt>Changes</dt><dd>${esc(cv.changes_summary)}</dd>` : ''}
+      </dl>${cv.keywords_added && cv.keywords_added.length ? `<div class="tags" style="margin-top:8px">${cv.keywords_added.map(k => `<span class="tag">+ ${esc(k)}</span>`).join('')}</div>` : ''}` : '<div class="empty">Not tailored yet.</div>'}</div>
+    ${a.email_subject || a.email_body ? `<div class="sec"><h4>Email</h4>${a.email_subject ? `<div style="font-weight:600;margin-bottom:6px">${esc(a.email_subject)}</div>` : ''}<div class="prose">${esc(a.email_body)}</div></div>` : ''}
+    ${a.cover_letter ? `<div class="sec"><h4>Cover letter</h4><div class="prose">${esc(a.cover_letter)}</div></div>` : ''}
+    ${answers.length ? `<div class="sec"><h4>Form answers</h4><dl class="kv">${answers.map(x => `<dt>${esc(x.question)}</dt><dd>${esc(x.answer)}</dd>`).join('')}</dl></div>` : ''}
+    <div class="sec"><h4>Timeline</h4>${timeline(events)}</div>`;
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-tab],[data-job],[data-app],[data-jf],[data-close],[data-act],#refresh');
+  if(!t) return;
+  if(t.id === 'refresh') return load();
+  if(t.dataset.tab){ S.tab = t.dataset.tab; try { localStorage.setItem('jht-tab', S.tab); } catch(err){} S.sheet = null; renderSheet(); render(); window.scrollTo(0, 0); return; }
+  if(t.dataset.jf){ S.jobFilter = t.dataset.jf; return render(); }
+  if(t.dataset.job) return openJob(Number(t.dataset.job));
+  if(t.dataset.app) return openApp(Number(t.dataset.app));
+  if(t.hasAttribute('data-close')){ S.sheet = null; return renderSheet(); }
+  const sh = S.sheet; if(!sh || S.busy) return;
+  const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  switch(t.dataset.act){
+    case 'shortlist': return setJobStatus(sh.id, 'shortlisted', val('js-reason'));
+    case 'skip':      return setJobStatus(sh.id, 'skipped', val('js-reason'));
+    case 'approve':   return setAppStatus(sh.id, 'approved', null, '', 'Approved. The applier sends it on its next run.');
+    case 'unapprove': return setAppStatus(sh.id, 'ready', 'Approval undone', '', 'Back to needs approval');
+    case 'retry':     return setAppStatus(sh.id, 'approved', 'Retry requested', '', 'Queued for another try');
+    case 'withdraw':  return setAppStatus(sh.id, 'withdrawn', null, '', 'Withdrawn');
+    case 'sendback': {
+      const n = val('as-note');
+      if(!n){ toast('Add a note so the applier knows what to change'); document.getElementById('as-note').focus(); return; }
+      return setAppStatus(sh.id, 'queued', n, '', 'Sent back to the applier');
+    }
+    case 'outcome': {
+      const st = val('as-out'), when = val('as-when'), next = val('as-next'), note = val('as-onote');
+      const at = when ? new Date(when).toISOString() : null;
+      const extra = `update jobs.applications set next_step = ${q(next)}${at ? `, next_step_at = ${q(at)}` : ''}${st !== 'no_response' ? ', last_response_at = coalesce(last_response_at, now())' : ''}${note ? `, response_summary = ${q(note)}` : ''} where id = ${qn(sh.id)};`
+        + (at ? `insert into jobs.events (job_id, application_id, kind, actor, detail) values (${qn(sh.job.id)}, ${qn(sh.id)}, 'interview_scheduled', ${q(CFG.actor)}, ${q((next || 'Next step') + ' · ' + fmtDate(at))});` : '');
+      if(st === sh.app.status) return write(extra + (note ? `insert into jobs.events (job_id, application_id, kind, actor, detail) values (${qn(sh.job.id)}, ${qn(sh.id)}, 'note', ${q(CFG.actor)}, ${q(note)});` : ''), 'Saved', () => openApp(sh.id));
+      return setAppStatus(sh.id, st, note || null, extra, 'Saved');
+    }
+  }
+});
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && S.sheet){ S.sheet = null; renderSheet(); } });
+document.addEventListener('input', e => {
+  if(e.target.id === 'jq'){
+    S.jobQuery = e.target.value;
+    const pos = e.target.selectionStart; render();
+    const el = document.getElementById('jq'); el.focus(); try { el.setSelectionRange(pos, pos); } catch(err){}
+  }
+});
+document.addEventListener('submit', e => {
+  e.preventDefault();
+  const v = id => document.getElementById(id).value.trim();
+  const arr = id => v(id).split(',').map(s => s.trim()).filter(Boolean);
+  if(e.target.id === 'profile'){
+    const chk = id => document.getElementById(id).checked;
+    return write(`update jobs.profile set
+      full_name = ${q(v('p-name'))}, email = ${q(v('p-email'))}, phone = ${q(v('p-phone'))}, location = ${q(v('p-loc'))},
+      linkedin_url = ${q(v('p-li'))}, portfolio_url = ${q(v('p-web'))}, headline = ${q(v('p-head'))},
+      target_titles = ${qarr(arr('p-titles'))}, target_locations = ${qarr(arr('p-locs'))}, remote_preference = ${q(v('p-mode'))},
+      keywords = ${qarr(arr('p-kw'))}, exclude_keywords = ${qarr(arr('p-xkw'))}, exclude_companies = ${qarr(arr('p-xco'))},
+      min_salary = ${qn(v('p-sal').replace(/[^\d.]/g, ''))}, base_cv_url = ${q(v('p-cvurl'))}, base_cv_text = ${q(document.getElementById('p-cv').value)}, standard_answers = ${q(document.getElementById('p-ans').value)},
+      min_match_score = ${qn(Math.min(100, Math.max(0, Number(v('p-min')) || 0)))}, daily_apply_limit = ${qn(Math.max(0, Number(v('p-daily')) || 0))},
+      auto_shortlist = ${chk('p-auto')}, require_approval = ${chk('p-appr')}
+      where id = 1;`, 'Profile saved', null);
+  }
+});
+
+/* ---------- boot ---------- */
+async function boot(){
+  render();
+  if(!window.claude || !window.claude.use){ S.noRuntime = true; return render(); }
+  const mcp = await window.claude.use('mcp').catch(() => null);
+  S.mcp = mcp;
+  if(!mcp){ S.noRuntime = true; return render(); }
+  load();
+}
+boot();
+})();
+</script>
