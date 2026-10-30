@@ -431,3 +431,19 @@ end $$;
 
 alter table jobs.lessons      enable row level security;
 alter table jobs.link_reports enable row level security;
+
+-- Newly posted jobs only: the applier never picks a job older than 14 days or with no posting date.
+create or replace function jobs.next_to_apply(p_limit int default null)
+returns setof jobs.jobs language sql stable
+set search_path = '' as $$
+  select j.* from jobs.jobs j
+  where j.status = 'shortlisted'
+    and j.posted_at >= current_date - 14
+    and (j.closes_at is null or j.closes_at >= current_date)
+    and not exists (select 1 from jobs.applications a where a.job_id = j.id)
+  order by j.match_score desc nulls last, j.created_at
+  limit greatest(0, least(
+    coalesce(p_limit, 1000),
+    (select daily_apply_limit from jobs.profile where id = 1)
+      - (select count(*) from jobs.applications a where a.submitted_at >= date_trunc('day', now()))::int));
+$$;
