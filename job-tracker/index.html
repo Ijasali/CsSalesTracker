@@ -202,6 +202,10 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 20px);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600;z-index:30;max-width:calc(100% - 32px)}
 .skel{height:14px;border-radius:4px;background:var(--sunk);margin:8px 0}
 .mono{font-family:var(--mono)}
+.sec.report{border:1px solid var(--line-strong);border-radius:10px;padding:12px;background:var(--sunk)}
+.lesson{padding:10px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px;font-size:14px}
+.lesson:first-child{border-top:0}
+.lesson .why{color:var(--muted);font-size:13px}
 </style>
 
 <header class="top">
@@ -256,6 +260,7 @@ const LANES = [
   ['Talking', ['screening','interview','offer']],
   ['Closed', ['accepted','rejected','withdrawn']]
 ];
+const LESSON_STATUS = {proposed: ['Waiting for re-check', 'warn'], active: ['Active', 'good'], retired: ['Turned off', 'neutral']};
 const OUTCOMES = ['acknowledged','screening','interview','offer','accepted','rejected','no_response'];
 const METHOD = {email:'Email', web_form:'Web form', ats:'ATS portal', easy_apply:'Easy Apply', referral:'Referral', other:'Other'};
 const MODE = {remote:'Remote', hybrid:'Hybrid', onsite:'On-site'};
@@ -363,6 +368,9 @@ select json_build_object(
             select id, title, company_name, location, work_mode, match_score, status, found_by, created_at, source,
                    salary_min, salary_max, salary_currency, apply_method, closes_at, times_seen
             from jobs.jobs order by created_at desc limit 400) x),
+  'lessons', (select coalesce(json_agg(x order by x.status = 'active' desc, x.created_at desc), '[]') from (
+            select id, created_at, applies_to, cause, rule, pattern, status, times_applied, created_by from jobs.lessons where status <> 'retired' or updated_at > now() - interval '30 days') x),
+  'reports_pending', (select count(*) from jobs.link_reports where status = 'pending'),
   'runs', (select coalesce(json_agg(x order by x.started_at desc), '[]') from (
             select id, agent, started_at, finished_at, status, jobs_found, jobs_new, applications_submitted, error, searches
             from jobs.agent_runs order by started_at desc limit 40) x)
@@ -386,11 +394,14 @@ async function openJob(id){
   try {
     const rows = await sql(`select row_to_json(j) as j,
       (select coalesce(json_agg(e order by e.at desc), '[]') from jobs.events e where e.job_id = j.id) as events,
-      (select a.id from jobs.applications a where a.job_id = j.id) as app_id
+      (select a.id from jobs.applications a where a.job_id = j.id) as app_id,
+      (select coalesce(json_agg(json_build_object('id', r.id, 'kind', r.kind, 'at', r.reported_at, 'note', r.user_note, 'analysis', r.quick_analysis,
+          'status', r.status, 'verified', r.verified_cause, 'lesson', (select row_to_json(l) from jobs.lessons l where l.id = r.lesson_id)) order by r.reported_at desc), '[]')
+         from jobs.link_reports r where r.job_id = j.id) as reports
       from jobs.jobs j where j.id = ${qn(id)}`);
     const r = rows[0];
     if(!r){ S.sheet = {kind:'job', id, err:'This job no longer exists.'}; return renderSheet(); }
-    S.sheet = {kind:'job', id, job: parse(r.j), events: parse(r.events), appId: r.app_id};
+    S.sheet = {kind:'job', id, job: parse(r.j), events: parse(r.events), appId: r.app_id, reports: parse(r.reports), reporting: false, reportKind: 'job_closed', analyzing: S.sheet && S.sheet.analyzing};
   } catch(e){ S.sheet = {kind:'job', id, err: errText(e)}; }
   renderSheet();
 }
@@ -579,6 +590,12 @@ function vAgents(){
         <dt>Applier</dt><dd>Takes shortlisted jobs from <span class="mono">jobs.next_to_apply()</span>, tailors your CV, writes the email or form answers, and marks them <b>Needs approval</b>. Submits only what <span class="mono">jobs.ready_to_submit()</span> returns.</dd>
       </dl>
       <p class="note">Full instructions for the agents are in <span class="mono">job-tracker/AGENTS.md</span>.</p>
+    </div>
+    <div class="card" style="grid-column:1/-1"><h2>Lessons the job scan follows <span class="aside">${S.data.reports_pending ? S.data.reports_pending + ' report(s) waiting for the next scan to re-check' : 'From jobs you reported as broken or closed'}</span></h2>
+      ${S.data.lessons.length ? S.data.lessons.map(l => `<div class="lesson"><div class="btnrow" style="align-items:center">${pill(LESSON_STATUS, l.status)}${l.pattern ? `<span class="tag">${esc(l.pattern)}</span>` : ''}${l.times_applied ? `<span class="note">seen ${l.times_applied + 1}×</span>` : ''}</div>
+        <div><b>${esc(l.rule)}</b></div><div class="why">Why: ${esc(l.cause)}</div>
+        <div class="btnrow">${l.status === 'retired' ? `<button class="btn small" type="button" data-lesson="${l.id}" data-lstatus="active">Turn back on</button>` : `<button class="btn small" type="button" data-lesson="${l.id}" data-lstatus="retired">Turn off</button>`}</div></div>`).join('')
+        : `<div class="empty">No lessons yet. When you tap <b>Link broken / job closed</b> on a job, the reason it got through and a rule to prevent it show here.</div>`}
     </div></div>`;
 }
 
@@ -638,12 +655,40 @@ function timeline(events){
   if(!events || !events.length) return '<div class="empty">No events yet.</div>';
   return `<div class="timeline">${events.map(e => {
     const what = e.kind === 'status_change' ? (e.from_status ? `${(APP_STATUS[e.from_status]||[e.from_status])[0]} → ` : 'Created as ') + (APP_STATUS[e.to_status]||[e.to_status])[0]
-      : ({found:'Found', cv_tailored:'CV tailored', email_sent:'Email sent', form_submitted:'Form submitted', email_received:'Reply received', interview_scheduled:'Interview scheduled', follow_up:'Follow-up', note:'Note', error:'Error'})[e.kind] || e.kind;
+      : ({found:'Found', cv_tailored:'CV tailored', email_sent:'Email sent', form_submitted:'Form submitted', email_received:'Reply received', interview_scheduled:'Interview scheduled', follow_up:'Follow-up', note:'Note', error:'Error', link_reported:'Reported', lesson:'Lesson recorded'})[e.kind] || e.kind;
     return `<div class="ev k-${esc(e.kind)}"><div><b>${esc(what)}</b>${e.actor ? ` <span class="note">by ${esc(agentName(e.actor))}</span>` : ''}</div>${e.detail ? `<div>${esc(e.detail)}</div>` : ''}<div class="w">${fmtDate(e.at)}</div></div>`;
   }).join('')}</div>`;
 }
-function jobSheet({job: j, events, appId}){
+function reportBlock(sh){
+  const reports = sh.reports || [];
+  let html = '';
+  if(sh.analyzing) html += `<div class="banner">Working out why this job got through and what the job scan should do differently…</div>`;
+  html += reports.map(r => `<div class="sec report"><h4>${r.kind === 'broken_link' ? 'You reported: link not working' : 'You reported: job no longer available'} · ${fmtDate(r.at)}</h4>
+    ${r.note ? `<p class="note" style="margin:0 0 6px">Your note: ${esc(r.note)}</p>` : ''}
+    ${r.analysis ? `<dl class="kv"><dt>Why it got through</dt><dd>${esc(r.analysis)}</dd>` : '<dl class="kv">'}
+    ${r.lesson ? `<dt>Rule from now on</dt><dd>${esc(r.lesson.rule)} ${pill(LESSON_STATUS, r.lesson.status)}</dd>` : ''}
+    <dt>Re-checked</dt><dd>${r.status === 'reviewed' ? esc(r.verified || 'Confirmed') : 'The job scan opens the link on its next run, confirms the cause and turns the rule on.'}</dd></dl>
+    ${!r.analysis && !sh.analyzing ? `<div class="btnrow" style="margin-top:8px"><button class="btn small" type="button" data-act="analyze" data-rid="${r.id}">Work out why</button></div>` : ''}
+  </div>`).join('');
+  return html;
+}
+function reportForm(sh){
+  if(!sh.reporting) return '';
+  const k = sh.reportKind;
+  return `<div class="sec report"><h4>What's wrong with this job?</h4>
+    <div class="filters">
+      <button class="chip" type="button" data-rk="job_closed" aria-pressed="${k === 'job_closed'}">No longer available</button>
+      <button class="chip" type="button" data-rk="broken_link" aria-pressed="${k === 'broken_link'}">Link doesn't open</button>
+    </div>
+    <label class="field">What did you see? (optional)<input id="rp-note" placeholder="e.g. page says position filled, redirects to a job list, 404"></label>
+    <div class="btnrow" style="margin-top:10px"><button class="btn primary" type="button" data-act="report" ${S.busy ? 'disabled' : ''}>Report and remove</button><button class="btn" type="button" data-act="report-cancel">Cancel</button></div>
+    <p class="note" style="margin:8px 0 0">The job leaves your list and any unsent application for it is withdrawn. Claude then works out why it got through and records a rule the job scan follows from now on.</p>
+  </div>`;
+}
+function jobSheet(sh){
+  const {job: j, events, appId} = sh;
   const can = ['new','shortlisted','skipped'].includes(j.status);
+  const reported = (sh.reports || []).length > 0;
   return `<div><div class="btnrow" style="margin-bottom:8px">${pill(JOB_STATUS, j.status)} ${scoreEl(j.match_score)}</div>
       <h2>${esc(j.title)}</h2><div class="co">${esc(j.company_name)}${j.location ? ' · ' + esc(j.location) : ''}</div></div>
     <div class="btnrow">
@@ -651,8 +696,11 @@ function jobSheet({job: j, events, appId}){
       ${can && j.status !== 'skipped' ? `<button class="btn" type="button" data-act="skip" ${S.busy ? 'disabled' : ''}>Skip</button>` : ''}
       ${appId ? `<button class="btn primary" type="button" data-app="${appId}">Open application</button>` : ''}
       ${linkOut(j.url) ? `<a class="btn" href="${esc(j.url)}" target="_blank" rel="noopener">Open posting ↗</a>` : ''}
+      ${!reported && !sh.reporting ? `<button class="btn danger" type="button" data-act="report-open">Link broken / job closed</button>` : ''}
     </div>
-    ${can ? `<label class="field">Reason (optional, the agents learn from it)<input id="js-reason" placeholder="e.g. too junior, wrong city"></label>` : ''}
+    ${reportForm(sh)}
+    ${reportBlock(sh)}
+    ${can && !sh.reporting ? `<label class="field">Reason (optional, the agents learn from it)<input id="js-reason" placeholder="e.g. too junior, wrong city"></label>` : ''}
     <div class="sec"><h4>Details</h4><dl class="kv">
       ${j.work_mode ? `<dt>Work mode</dt><dd>${MODE[j.work_mode]}</dd>` : ''}
       ${j.employment_type ? `<dt>Type</dt><dd>${esc(j.employment_type.replace('_',' '))}</dd>` : ''}
@@ -715,9 +763,76 @@ function appSheet({app: a, job: j, cv, events}){
     <div class="sec"><h4>Timeline</h4>${timeline(events)}</div>`;
 }
 
+/* ---------- broken / closed job reports ---------- */
+async function reportJob(sh, note){
+  if(S.busy) return;
+  S.busy = true; renderSheet();
+  let rid = null;
+  try {
+    const rows = await sql(`select jobs.report_broken_link(${qn(sh.id)}, ${q(sh.reportKind)}, ${q(note)}, ${q(CFG.actor)}) as id;`, true);
+    rid = rows[0] && rows[0].id;
+    toast('Reported. Removed from your list.');
+  } catch(e){ toast(errText(e)); S.busy = false; return renderSheet(); }
+  S.busy = false;
+  load();
+  await openJob(sh.id);
+  if(rid) analyzeReport(sh.id, Number(rid));
+}
+function domainOf(u){ try { return new URL(u).hostname.replace(/^www\./, ''); } catch(e){ return null; } }
+async function analyzeReport(jobId, reportId){
+  if(!S.sample){ toast('Claude is not available in this view. The job scan will work out the cause on its next run.'); return; }
+  if(S.sheet && S.sheet.kind === 'job') { S.sheet.analyzing = true; renderSheet(); }
+  try {
+    const rows = await sql(`select row_to_json(j) as j, row_to_json(r) as r,
+        (select row_to_json(x) from (select id, agent, started_at, searches from jobs.agent_runs where id = j.found_run_id) x) as run,
+        (select coalesce(json_agg(json_build_object('id', l.id, 'rule', l.rule, 'cause', l.cause, 'pattern', l.pattern, 'status', l.status)), '[]') from jobs.lessons l where l.status <> 'retired') as lessons,
+        (select count(*) from jobs.link_reports r2 join jobs.jobs j2 on j2.id = r2.job_id where j2.source = j.source) as same_source_reports
+      from jobs.link_reports r join jobs.jobs j on j.id = r.job_id where r.id = ${qn(reportId)}`);
+    const x = rows[0]; if(!x) throw {message: 'Report not found'};
+    const j = parse(x.j), r = parse(x.r), lessons = parse(x.lessons), run = parse(x.run);
+    const facts = {
+      reported_problem: r.kind === 'broken_link' ? 'The link does not open (error page, 404, or it redirects somewhere unrelated).' : 'The job is no longer available (closed, filled, or not accepting applications).',
+      user_note: r.user_note || null,
+      job: {title: j.title, company: j.company_name, url: j.url, url_domain: domainOf(j.url), apply_url: j.apply_url, source: j.source,
+            posted_at: j.posted_at, closes_at: j.closes_at, found_at: j.created_at, reported_at: r.reported_at,
+            days_between_found_and_reported: Math.round((new Date(r.reported_at) - new Date(j.created_at)) / 86400000),
+            times_seen_by_scan: j.times_seen, last_seen_by_scan: j.last_seen_at, found_by: j.found_by, description_start: (j.description || '').slice(0, 600)},
+      scan_run: run, earlier_reports_from_same_source: Math.max(0, x.same_source_reports - 1),
+      current_scan_checks: 'Before saving a job the scan opens the exact posting URL with a web fetch (a server-side HTTP fetch, not a browser) and confirms the page shows the job description and is still accepting applications; it skips search pages, category pages and aggregator list pages. It re-checks Open jobs each morning.',
+      existing_rules: lessons
+    };
+    const prompt = `A job-search agent saved a job posting that turned out to be bad. Work out the most likely reason it got through the agent's checks, and write one concrete rule that would stop this kind of job getting through again.
+
+Facts (JSON):
+${JSON.stringify(facts, null, 2)}
+
+Think about causes such as: aggregator or partner listings (e.g. Jobgether, Jooble, Talent.com) whose page stays up after the employer's job closes, or that hide the real employer; job boards that keep pages live but closed; pages that render the job text from cache while the apply button is gone; JavaScript-rendered pages a plain fetch can't really see; posting date too old; tracking/redirect URLs that expire; the job closing quickly after it was found (then the fault is the re-check frequency, not the first check).
+Be specific to these facts; do not invent facts you were not given. If an existing rule already covers this, say which (duplicate_of = its id) instead of writing a new one.
+
+Answer with JSON only:
+{"cause": "<1-2 plain sentences: why it got through>", "rule": "<one imperative instruction for the job scan, specific and checkable, e.g. 'For Jobgether listings, open the employer's own posting and save that URL; skip the job if the employer page can't be found.'>", "pattern": "<the domain or source the rule targets, or null>", "applies_to": "finder", "duplicate_of": null}`;
+    const a = await S.sample.json(prompt, {modelTier: 'default'});
+    if(!a || !a.cause || !a.rule) throw {message: 'Claude did not return a usable answer'};
+    const dup = a.duplicate_of && lessons.some(l => l.id === Number(a.duplicate_of)) ? Number(a.duplicate_of) : null;
+    const lessonSql = dup
+      ? `update jobs.lessons set times_applied = times_applied + 1 where id = ${qn(dup)};
+         update jobs.link_reports set quick_analysis = ${q(a.cause)}, lesson_id = ${qn(dup)} where id = ${qn(reportId)};`
+      : `with l as (insert into jobs.lessons (applies_to, cause, rule, pattern, status, created_by, source_report_id)
+           values ('finder', ${q(a.cause)}, ${q(a.rule)}, ${q(a.pattern || domainOf(j.url))}, 'proposed', 'app', ${qn(reportId)}) returning id)
+         update jobs.link_reports set quick_analysis = ${q(a.cause)}, lesson_id = (select id from l) where id = ${qn(reportId)};`;
+    await sql(lessonSql + `insert into jobs.events (job_id, kind, actor, detail) values (${qn(jobId)}, 'lesson', 'app', ${q('Why: ' + a.cause)});`, true);
+    toast(dup ? 'Same cause as an earlier report. That rule now counts it.' : 'Recorded why, and a rule for the job scan');
+  } catch(e){
+    toast(e && e.code === 'not_granted' ? 'Claude is switched off for this page. The job scan will work out the cause on its next run.' : (e && e.code === 'rate_limited') ? 'Claude is busy. Tap Work out why again in a minute.' : ('Could not work out why: ' + ((e && e.message) || 'unknown error')));
+  }
+  if(S.sheet && S.sheet.kind === 'job') S.sheet.analyzing = false;
+  if(S.sheet && S.sheet.kind === 'job' && S.sheet.id === jobId) await openJob(jobId);
+  load();
+}
+
 /* ---------- events ---------- */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-tab],[data-job],[data-app],[data-jf],[data-close],[data-act],#refresh');
+  const t = e.target.closest('[data-tab],[data-job],[data-app],[data-jf],[data-close],[data-act],[data-rk],[data-lesson],#refresh');
   if(!t) return;
   if(t.id === 'refresh') return load();
   if(t.dataset.tab){ S.tab = t.dataset.tab; try { localStorage.setItem('jht-tab', S.tab); } catch(err){} S.sheet = null; renderSheet(); render(); window.scrollTo(0, 0); return; }
@@ -725,6 +840,8 @@ document.addEventListener('click', e => {
   if(t.dataset.job) return openJob(Number(t.dataset.job));
   if(t.dataset.app) return openApp(Number(t.dataset.app));
   if(t.hasAttribute('data-close')){ S.sheet = null; return renderSheet(); }
+  if(t.dataset.lesson) return write(`update jobs.lessons set status = ${q(t.dataset.lstatus)} where id = ${qn(t.dataset.lesson)};`, t.dataset.lstatus === 'retired' ? 'Rule turned off' : 'Rule turned back on', null);
+  if(t.dataset.rk && S.sheet){ S.sheet.reportKind = t.dataset.rk; return renderSheet(); }
   const sh = S.sheet; if(!sh || S.busy) return;
   const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   switch(t.dataset.act){
@@ -734,6 +851,10 @@ document.addEventListener('click', e => {
     case 'unapprove': return setAppStatus(sh.id, 'ready', 'Approval undone', '', 'Back to needs approval');
     case 'retry':     return setAppStatus(sh.id, 'approved', 'Retry requested', '', 'Queued for another try');
     case 'withdraw':  return setAppStatus(sh.id, 'withdrawn', null, '', 'Withdrawn');
+    case 'report-open':   sh.reporting = true; return renderSheet();
+    case 'report-cancel': sh.reporting = false; return renderSheet();
+    case 'report':    return reportJob(sh, val('rp-note'));
+    case 'analyze':   return analyzeReport(sh.id, Number(t.dataset.rid));
     case 'sendback': {
       const n = val('as-note');
       if(!n){ toast('Add a note so the applier knows what to change'); document.getElementById('as-note').focus(); return; }
@@ -779,8 +900,8 @@ document.addEventListener('submit', e => {
 async function boot(){
   render();
   if(!window.claude || !window.claude.use){ S.noRuntime = true; return render(); }
-  const mcp = await window.claude.use('mcp').catch(() => null);
-  S.mcp = mcp;
+  const [mcp, sample] = await Promise.all(['mcp', 'sample'].map(n => window.claude.use(n).catch(() => null)));
+  S.mcp = mcp; S.sample = sample;
   if(!mcp){ S.noRuntime = true; return render(); }
   load();
 }

@@ -53,6 +53,14 @@ submitted or later → `applied`, withdrawn → `archived`).
 
 Use different `agent` names (`job_finder_1`, `job_finder_2`) so the app shows each separately.
 
+## Lessons from reported jobs
+
+When you tap **Link broken / job closed**, the app records the report and Claude writes down why the job
+probably got through and a rule to prevent it (`jobs.lessons`, status `proposed`). At the start of each run
+the job scan re-opens every pending report's link, records the verified cause in `link_reports.verified_cause`,
+corrects the rule if needed and sets it `active`. Every active rule is part of the job scan's instructions from
+then on. Lessons are listed on the app's Agents tab, where you can turn one off.
+
 ## Applier agent (tailor CV + apply)
 
 1. Start a run: `insert into jobs.agent_runs (agent) values ('applier') returning id;`
@@ -96,6 +104,8 @@ Never submit an application whose status is not returned by `jobs.ready_to_submi
 | In the app | Writes |
 |---|---|
 | Jobs → Shortlist / Skip | `jobs.jobs.status`, `status_reason`, plus a `note` event |
+| Job → Link broken / job closed | `jobs.report_broken_link(job_id, kind, note)`: a `link_reports` row, job `expired`, unsent application withdrawn; then Claude writes `quick_analysis` and a `proposed` row in `jobs.lessons` |
+| Agents → Lessons → Turn off / on | `jobs.lessons.status` `retired` / `active` |
 | Application → Approve | `set_application_status(id, 'approved', 'app')` |
 | Application → Send back | `set_application_status(id, 'queued', 'app', '<your note>')` |
 | Application → Retry | `failed` → `approved` |

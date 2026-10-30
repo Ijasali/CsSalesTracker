@@ -356,3 +356,78 @@ alter table jobs.applications enable row level security;
 alter table jobs.cv_versions  enable row level security;
 alter table jobs.events       enable row level security;
 revoke all on schema jobs from anon, authenticated;
+
+-- ---------- later additions ----------
+alter table jobs.profile add column if not exists base_cv_html text, add column if not exists search_rules text;
+alter table jobs.profile add column if not exists standard_answers text;
+
+-- Lessons from jobs reported as broken or closed. The app writes a first-pass
+-- "why" and a proposed rule; the job scan re-checks the page, corrects and
+-- activates the rule, and follows every active rule on each run.
+create table jobs.lessons (
+  id            bigint generated always as identity primary key,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  applies_to    text not null default 'finder' check (applies_to in ('finder','applier','all')),
+  cause         text not null,
+  rule          text not null,
+  pattern       text,
+  status        text not null default 'proposed' check (status in ('proposed','active','retired')),
+  created_by    text,
+  source_report_id bigint,
+  times_applied int not null default 0
+);
+create trigger lessons_touch before update on jobs.lessons for each row execute function jobs.touch_updated_at();
+
+create table jobs.link_reports (
+  id              bigint generated always as identity primary key,
+  job_id          bigint not null references jobs.jobs(id) on delete cascade,
+  reported_at     timestamptz not null default now(),
+  reported_by     text not null default 'app',
+  kind            text not null check (kind in ('broken_link','job_closed')),
+  url             text,
+  user_note       text,
+  quick_analysis  text,
+  status          text not null default 'pending' check (status in ('pending','reviewed')),
+  verified_cause  text,
+  reviewed_at     timestamptz,
+  lesson_id       bigint references jobs.lessons(id) on delete set null
+);
+create index on jobs.link_reports (status, reported_at);
+alter table jobs.lessons add constraint lessons_report_fk foreign key (source_report_id) references jobs.link_reports(id) on delete set null;
+
+alter table jobs.events drop constraint events_kind_check;
+alter table jobs.events add constraint events_kind_check check (kind in (
+  'found','status_change','cv_tailored','email_sent','form_submitted',
+  'email_received','interview_scheduled','follow_up','note','error','link_reported','lesson'));
+
+-- The app's "Link broken / job closed" button: records the report, withdraws any
+-- unsent application, and marks the job expired.
+create or replace function jobs.report_broken_link(p_job_id bigint, p_kind text, p_note text default null, p_actor text default 'app')
+returns bigint language plpgsql
+set search_path = '' as $$
+declare v_id bigint; v_app bigint; v_app_status text;
+begin
+  insert into jobs.link_reports (job_id, kind, url, user_note, reported_by)
+  select id, p_kind, url, p_note, p_actor from jobs.jobs where id = p_job_id
+  returning id into v_id;
+  if v_id is null then raise exception 'job % not found', p_job_id; end if;
+
+  select id, status into v_app, v_app_status from jobs.applications where job_id = p_job_id;
+  if v_app is not null and v_app_status in ('queued','tailoring','ready','approved','failed') then
+    perform jobs.set_application_status(v_app, 'withdrawn', p_actor,
+      case p_kind when 'broken_link' then 'Link broken' else 'Job closed' end);
+  end if;
+
+  update jobs.jobs set status = 'expired',
+    status_reason = case p_kind when 'broken_link' then 'You reported: link not working' else 'You reported: job no longer available' end
+  where id = p_job_id;
+
+  insert into jobs.events (job_id, kind, actor, detail)
+  values (p_job_id, 'link_reported', p_actor,
+    case p_kind when 'broken_link' then 'Link not working' else 'Job no longer available' end || coalesce(': ' || p_note, ''));
+  return v_id;
+end $$;
+
+alter table jobs.lessons      enable row level security;
+alter table jobs.link_reports enable row level security;
