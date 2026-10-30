@@ -24,7 +24,7 @@
   --hero:#15171A; --hero-2:#24272B; --hero-ink:#FFFFFF; --hero-muted:#C9CCD1; --hero-owed:#F2B08F;
   --wife:#553A95; --wife-soft:#EEE8F7; --joint:#3F4348; --joint-soft:#ECE9E2;
   --bar:#6E9AD6; --bar-sel:#16427F; --avg:#8C877C; --shadow:0 1px 2px rgba(21,23,26,.05);
-  --gain:#2A6CC4; --loss:#C2571A;
+  --gain:#2A6CC4; --loss:#C2571A; --due-red:#B42318; --due-red-soft:#FDECEA; --due-amber:#8A5A00; --due-amber-soft:#FCF1D3; --due-green:#1C7147; --due-green-soft:#E1F0E7;
   --display:"Fraunces",Georgia,"Times New Roman",serif; --body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
 }
 @media (prefers-color-scheme: dark){
@@ -36,7 +36,7 @@
     --hero:#23272D; --hero-2:#2E333A; --hero-ink:#FFFFFF; --hero-muted:#AEB3BA; --hero-owed:#F2B08F;
     --wife:#C4B2F0; --wife-soft:#2E2640; --joint:#C4C7CC; --joint-soft:#2A2E34;
     --bar:#4F74A8; --bar-sel:#A9C8F5; --avg:#8C877C; --shadow:none;
-    --gain:#5B8FD6; --loss:#D0703F;
+    --gain:#5B8FD6; --loss:#D0703F; --due-red:#F97066; --due-red-soft:#3A1D1B; --due-amber:#F5C451; --due-amber-soft:#3A2F12; --due-green:#6CC296; --due-green-soft:#1B3327;
   }
 }
 :root[data-theme="dark"]{
@@ -47,7 +47,7 @@
   --hero:#23272D; --hero-2:#2E333A; --hero-ink:#FFFFFF; --hero-muted:#AEB3BA; --hero-owed:#F2B08F;
   --wife:#C4B2F0; --wife-soft:#2E2640; --joint:#C4C7CC; --joint-soft:#2A2E34;
   --bar:#4F74A8; --bar-sel:#A9C8F5; --avg:#8C877C; --shadow:none;
-  --gain:#5B8FD6; --loss:#D0703F;
+  --gain:#5B8FD6; --loss:#D0703F; --due-red:#F97066; --due-red-soft:#3A1D1B; --due-amber:#F5C451; --due-amber-soft:#3A2F12; --due-green:#6CC296; --due-green-soft:#1B3327;
 }
 html,body{height:100%}
 body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
@@ -106,6 +106,11 @@ button.mtile{cursor:pointer}
 .amt{font-size:14px;font-weight:700;white-space:nowrap}
 .badge{padding:1px 7px;border-radius:8px;font-size:11px;font-weight:700;background:var(--accent-soft);color:var(--accent-strong);white-space:nowrap}
 .badge.w{background:var(--wife-soft);color:var(--wife)} .badge.j{background:var(--joint-soft);color:var(--joint)}
+.due{display:flex;align-items:center;gap:12px;width:100%;padding:12px 0 12px 12px;border:0;border-left:4px solid var(--line);background:none;color:inherit;text-align:left;cursor:pointer;margin:2px 0}
+.due + .due{border-top:1px solid var(--line2)}
+.due.r{border-left-color:var(--due-red)} .due.y{border-left-color:var(--due-amber)} .due.g{border-left-color:var(--due-green)}
+.dpill{padding:3px 9px;border-radius:10px;font-size:12px;font-weight:800;white-space:nowrap;background:var(--track);color:var(--ink2)}
+.dpill.r{background:var(--due-red-soft);color:var(--due-red)} .dpill.y{background:var(--due-amber-soft);color:var(--due-amber)} .dpill.g{background:var(--due-green-soft);color:var(--due-green)}
 .badge.warn{background:var(--warn-soft);color:var(--warn)} .badge.good{background:var(--good-soft);color:var(--good)}
 .seg{display:grid;gap:4px;padding:4px;border-radius:14px;background:var(--seg)}
 .seg button{min-height:40px;border-radius:10px;border:0;background:transparent;font-weight:700;font-size:14px;color:var(--muted);cursor:pointer;padding:0 6px}
@@ -417,6 +422,7 @@ const loadBoot = () => load('boot', async () => {
 });
 const loadMonth = m => load('month', async () => { S.monthData[m] = await api('app_month', {m: D(m).slice(1, -1)}); });
 const loadPer = () => { const r = perRange(); return load('per', async () => { S.perData[perKey(r)] = await api('app_period', {from: D(r.from).slice(1, -1), to: D(r.to).slice(1, -1), pfrom: r.pfrom || null, pto: r.pto || null}); }); };
+const loadCards = () => load('cards', async () => { S.cards = (await api('app_cards', {})) || []; });
 const loadRecent = () => load('recent', async () => { S.recent = (await api('app_recent', {})) || []; });
 const loadTxns = () => load('txns', async () => {
   S.txns = (await api('app_txns', {q: S.txBreak ? '' : S.txq.trim(), month: S.txMonth, kind: S.txBreak || S.txKind, acct: S.txBreak ? null : (S.txAcct || null), review: !S.txBreak && !!S.txReview, counted: !!S.txBreak})) || [];
@@ -440,7 +446,7 @@ async function refreshAll(){
   S.net = null; delete S.err.net;
   await loadBoot();
   if(!S.boot) return;
-  await Promise.all([loadMonth(S.month), loadRecent()]);
+  await Promise.all([loadMonth(S.month), loadRecent(), loadCards()]);
 }
 
 /* ---------- navigation ---------- */
@@ -644,6 +650,7 @@ function viewHome(){
   h += `<section class="hero" aria-label="Net worth"><div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Household net worth</span><span class="big">${cad(tot.net)}</span>
     <div class="row wrap xs" style="column-gap:12px;row-gap:2px;color:var(--hero-muted)">${ms.map((m, i) => `<span>${esc(m.name)} <b style="color:var(--hero-ink)">${cad(tot.byOwner['m' + i] || 0)}</b></span>`).join('')}${hasJoint() ? `<span>Joint <b style="color:var(--hero-ink)">${cad(tot.byOwner.joint || 0)}</b></span>` : ''}</div>${nwNote(tot)}</div>
     <div class="tiles"><button class="tile" data-act="tab" data-v="accounts"><span class="k">Bank & cash</span><span class="v">${cad0(tot.bank)}</span></button><button class="tile" data-act="tab" data-v="accounts"><span class="k">Investments</span><span class="v">${cad0(tot.inv)}</span></button><button class="tile" data-act="tab" data-v="accounts"><span class="k">Owed</span><span class="v owed">${cad0(tot.owed)}</span></button></div></section>`;
+  h += cardsCard();
   if(S.err.month) h += banner(S.err.month, true);
   if(!md) h += `<div class="skel">Loading ${esc(mLabel(S.month))}…</div>`;
   else {
@@ -669,6 +676,24 @@ function viewHome(){
   if(S.err.recent) h += banner(S.err.recent, true);
   h += S.recent ? `<div class="list">${S.recent.map(txRow).join('') || '<span class="skel">No transactions yet.</span>'}</div>` : '<div class="skel">Loading…</div>';
   return h + `</section></main>`;
+}
+// Credit cards: what is due, by when. Red = late, yellow = due within 7 days, green = nothing due or time to spare.
+function dueInfo(c){
+  const left = c.left_due == null ? null : Number(c.left_due);
+  if(left == null) return {cls: '', pill: 'Add due date', line: 'Tap to add the statement balance and due date'};
+  const days = Math.round((new Date(c.due + 'T12:00:00Z') - new Date(todayISO() + 'T12:00:00Z')) / 864e5);
+  const when = dShort(c.due, c.due.slice(0, 4) !== todayISO().slice(0, 4));
+  if(left <= 0) return {cls: 'g', pill: Number(c.stmt_amt) > 0 ? 'Paid' : 'No payment due', line: Number(c.stmt_amt) > 0 ? 'Statement paid · was due ' + when : 'Nothing due ' + when};
+  if(days < 0) return {cls: 'r', pill: -days + ' day' + (days === -1 ? '' : 's') + ' late', line: cad(left) + ' was due ' + when};
+  return {cls: days <= 7 ? 'y' : 'g', pill: days === 0 ? 'Due today' : (days === 1 ? '1 day left' : days + ' days left'), line: cad(left) + ' due ' + when};
+}
+function cardsCard(){
+  if(S.err.cards) return banner(S.err.cards, true);
+  if(!S.cards || !S.cards.length) return '';
+  const rank = {r: 0, y: 1, g: 2, '': 3};
+  const rows = S.cards.map(c => ({c, i: dueInfo(c)})).sort((a, b) => rank[a.i.cls] - rank[b.i.cls]);
+  return `<section class="card tight"><div class="row sp" style="padding-top:10px"><h2>Card payments</h2><span class="xs muted">tap to update a statement</span></div><div style="padding-bottom:6px">` +
+    rows.map(({c, i}) => { const o = Number(c.owed); return `<button class="due ${i.cls}" data-act="stmtedit" data-id="${c.aid}" aria-label="${esc(c.name)}: ${esc(i.pill)}, ${esc(i.line)}"><span class="grow" style="min-width:0"><span class="t1" style="display:block">${esc(c.name)}</span><span class="t2" style="display:block">${esc(i.line)}</span><span class="xs muted" style="display:block">${o < 0 ? cad(-o) + ' credit on the card' : 'Balance now ' + cad(o)}</span></span><span class="dpill ${i.cls}">${esc(i.pill)}</span></button>`; }).join('') + `</div></section>`;
 }
 function txRow(t){
   const a = acct(t.aid); const amt = Number(t.amt);
@@ -1048,6 +1073,13 @@ function reviewRow(r, i){
 function sheet(){
   const s = S.sheet;
   if(s.type === 'people') return peopleSheet();
+  if(s.type === 'stmt') return `<div class="sheet-bg" data-act="closesheet"><div class="sheet" role="dialog" aria-label="Statement" data-stop="1">
+    <div class="row sp"><h2>${esc(s.name)}</h2><button class="icon-btn" data-act="closesheet" aria-label="Close">${svg('x', 18)}</button></div>
+    <span class="sm muted">From the card's latest statement. Payments made after the statement date come off what's due.</span>
+    <form data-form="stmt" style="display:flex;flex-direction:column;gap:14px">
+    <label class="field"><span>Statement balance</span><input id="st-amt" class="inp" inputmode="decimal" value="${esc(s.amt)}" placeholder="$0.00" required></label>
+    <div class="formrow"><label class="field"><span>Due date</span><input id="st-due" class="inp" type="date" value="${esc(s.due)}" required></label><label class="field"><span>Statement date</span><input id="st-stmt" class="inp" type="date" value="${esc(s.stmt)}"></label></div>
+    ${S.err.stmt ? banner(S.err.stmt, true) : ''}<button class="btn primary" type="submit"${S.busy.stmt ? ' disabled' : ''}>${S.busy.stmt ? 'Saving…' : 'Save'}</button></form></div></div>`;
   if(s.type === 'period') return `<div class="sheet-bg" data-act="closesheet"><div class="sheet" role="dialog" aria-label="Show insights for" data-stop="1">
     <div class="row sp"><h2>Show insights for</h2><button class="icon-btn" data-act="closesheet" aria-label="Close">${svg('x', 18)}</button></div>
     <div class="list">${PERS.map(o => `<button class="item" data-act="perset" data-v="${o[0]}" aria-pressed="${S.per === o[0]}"><span class="grow t1"${S.per === o[0] ? ' style="color:var(--accent)"' : ''}>${o[1]}</span>${S.per === o[0] ? svg('check', 20) : ''}</button>`).join('')}</div></div></div>`;
@@ -1078,6 +1110,17 @@ function startAdd(){
   const def = store('lastAcct');
   S.add = {kind: 'expense', amt: '', acct: acct(def) ? def : (B().accounts.find(a => a.active && a.type === 'credit_card') || B().accounts[0] || {}).id, to: '', cat: '', date: todayISO(), payee: '', note: ''};
   delete S.err.add; go('add', true);
+}
+async function saveStmt(){
+  const st = S.sheet; delete S.err.stmt;
+  try {
+    const amt = Math.abs(Number(String(st.amt).replace(/[$,\s]/g, '')));
+    if(String(st.amt).trim() === '' || isNaN(amt)) throw {code: 'bad_input', message: 'Enter the statement balance (0 if nothing is due).'};
+    D(st.due); if(st.stmt) D(st.stmt);
+    S.busy.stmt = true; render();
+    await api('app_set_statement', {acct: st.aid, due: st.due, amount: amt, stmt: st.stmt || null}, true);
+    S.busy.stmt = false; S.sheet = null; toast('Saved'); loadCards();
+  } catch(e){ S.busy.stmt = false; S.err.stmt = errText(e); render(); }
 }
 async function saveAdd(){
   const a = S.add; delete S.err.add;
@@ -1313,6 +1356,7 @@ document.addEventListener('click', e => {
     case 'acctactive': setActive(el.dataset.id); break;
     case 'nweye': { const a = acct(el.dataset.id); if(a) setNetWorth([a.id], !a.nw); break; }
     case 'inskind': S.insKind = el.dataset.v; render(); break;
+    case 'stmtedit': { const c = (S.cards || []).find(x => x.aid === el.dataset.id); if(c){ delete S.err.stmt; S.sheet = {type: 'stmt', aid: c.aid, name: c.name, amt: c.stmt_amt != null ? Number(c.stmt_amt).toFixed(2) : '', due: c.due || '', stmt: c.stmt || ''}; render(); } break; }
     case 'persheet': S.sheet = {type: 'period'}; render(); break;
     case 'perset': S.per = el.dataset.v; S.perAt = null; S.sheet = null; store('per', S.per); render(); break;
     case 'pernav': { const r = perRange(); const d = +el.dataset.d; S.perAt = S.per === 'week' ? addDays(r.from, 7 * d) : (+r.from.slice(0, 4) + d) + '-01-01'; render(); break; }
@@ -1364,7 +1408,7 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target.dataset.form;
-  if(f === 'login') doLogin(); else if(f === 'add') saveAdd(); else if(f === 'edit') saveEdit(); else if(f === 'bud') saveBud();
+  if(f === 'login') doLogin(); else if(f === 'add') saveAdd(); else if(f === 'edit') saveEdit(); else if(f === 'bud') saveBud(); else if(f === 'stmt') saveStmt();
 });
 let searchT;
 document.addEventListener('input', e => {
@@ -1375,6 +1419,7 @@ document.addEventListener('input', e => {
   if(id.startsWith('add-') && S.add){ const k = {'add-amt':'amt','add-date':'date','add-payee':'payee','add-note':'note'}[id]; if(k) S.add[k] = t.value; return; }
   if(id.startsWith('ed-') && S.sheet){ const k = {'ed-payee':'payee','ed-note':'note','ed-date':'date','ed-amt':'amt'}[id]; if(k) S.sheet[k] = t.value; return; }
   if(id === 'bud-amt' && S.bedit){ S.bedit.v = t.value; }
+  if(id.startsWith('st-') && S.sheet && S.sheet.type === 'stmt'){ const k = {'st-amt':'amt','st-due':'due','st-stmt':'stmt'}[id]; if(k) S.sheet[k] = t.value; }
 });
 document.addEventListener('change', e => {
   const t = e.target; const id = t.id || '';
