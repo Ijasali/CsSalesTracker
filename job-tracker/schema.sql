@@ -447,3 +447,55 @@ set search_path = '' as $$
     (select daily_apply_limit from jobs.profile where id = 1)
       - (select count(*) from jobs.applications a where a.submitted_at >= date_trunc('day', now()))::int));
 $$;
+
+-- Who submitted each application: 'agent' (the applying agent) or 'manual' (you, marked in the app).
+alter table jobs.applications add column if not exists applied_by text check (applied_by in ('agent','manual'));
+
+create or replace function jobs.set_application_status(p_id bigint, p_status text, p_actor text, p_detail text default null)
+returns void language plpgsql
+set search_path = '' as $$
+begin
+  perform set_config('jobs.actor', coalesce(p_actor, 'unknown'), true);
+  update jobs.applications set
+    status       = p_status,
+    approved_at  = case when p_status = 'approved' then now() else approved_at end,
+    approved_by  = case when p_status = 'approved' then p_actor else approved_by end,
+    submitted_at = case when p_status = 'submitted' then coalesce(submitted_at, now()) else submitted_at end,
+    applied_by   = case when p_status = 'submitted' and applied_by is null
+                        then case when p_actor in ('you','app') then 'manual' else 'agent' end
+                        else applied_by end,
+    error        = case when p_status = 'failed' then coalesce(p_detail, error) else error end
+  where id = p_id;
+  if not found then raise exception 'application % not found', p_id; end if;
+  if p_detail is not null and p_status <> 'failed' then
+    insert into jobs.events (job_id, application_id, kind, actor, detail)
+    select job_id, id, 'note', p_actor, p_detail from jobs.applications where id = p_id;
+  end if;
+end $$;
+
+-- The app's "I applied myself" button.
+create or replace function jobs.mark_applied_manually(p_job_id bigint, p_method text, p_applied_at timestamptz default now(), p_note text default null)
+returns bigint language plpgsql
+set search_path = '' as $$
+declare v_app bigint; v_status text;
+begin
+  perform set_config('jobs.actor', 'you', true);
+  select id, status into v_app, v_status from jobs.applications where job_id = p_job_id;
+  if v_app is null then
+    insert into jobs.applications (job_id, status, method, submitted_at, applied_by, created_by, follow_up_at, notes)
+    values (p_job_id, 'submitted', p_method, coalesce(p_applied_at, now()), 'manual', 'you',
+            (coalesce(p_applied_at, now()) + interval '7 days')::date, p_note)
+    returning id into v_app;
+  elsif v_status in ('queued','tailoring','ready','approved','failed','withdrawn') then
+    update jobs.applications set method = coalesce(p_method, method), submitted_at = coalesce(p_applied_at, now()),
+      applied_by = 'manual', follow_up_at = (coalesce(p_applied_at, now()) + interval '7 days')::date,
+      notes = coalesce(p_note, notes), error = null
+    where id = v_app;
+    perform jobs.set_application_status(v_app, 'submitted', 'you');
+  else
+    raise exception 'This job already has an application marked %', v_status;
+  end if;
+  insert into jobs.events (job_id, application_id, kind, actor, detail)
+  values (p_job_id, v_app, 'note', 'you', 'Applied myself' || coalesce(' via ' || p_method, '') || coalesce(': ' || p_note, ''));
+  return v_app;
+end $$;

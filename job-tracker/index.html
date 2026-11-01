@@ -202,6 +202,8 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 20px);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:8px;font-size:14px;font-weight:600;z-index:30;max-width:calc(100% - 32px)}
 .skel{height:14px;border-radius:4px;background:var(--sunk);margin:8px 0}
 .mono{font-family:var(--mono)}
+.searchbar{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;align-items:center;padding:12px 16px}
+.searchmeta{font-size:13.5px;color:var(--ink-2);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .sec.report{border:1px solid var(--line-strong);border-radius:10px;padding:12px;background:var(--sunk)}
 .lesson{padding:10px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px;font-size:14px}
 .lesson:first-child{border-top:0}
@@ -224,7 +226,8 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
 
 <script>
 (() => {
-const CFG = { supabase: 'Supabase', project: 'abylyjqplyxrpexwyufi', actor: 'app' };
+const CFG = { supabase: 'Supabase', project: 'abylyjqplyxrpexwyufi', actor: 'app', tz: 'America/Toronto',
+  scanTimes: [[6,10],[12,10],[18,10]] };  // the job scan's schedule, Toronto time
 
 const S = {
   tab: 'overview', data: null, loading: true, err: null, mcp: null, noRuntime: false,
@@ -283,6 +286,25 @@ function ago(ts){
 }
 const fmtDate = ts => ts ? new Date(ts).toLocaleString(undefined, {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : '';
 const fmtDay = d => d ? new Date(d + (String(d).length === 10 ? 'T12:00:00' : '')).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : '';
+function whenShort(ts){
+  const t = new Date(ts), now = new Date();
+  const time = t.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+  const day = x => x.toLocaleDateString('en-CA', {timeZone: CFG.tz});
+  if(day(t) === day(now)) return 'today ' + time;
+  if(day(t) === day(new Date(now - 86400000))) return 'yesterday ' + time;
+  return t.toLocaleDateString(undefined, {month:'short', day:'numeric'}) + ' ' + time;
+}
+// Next scheduled job scan, from CFG.scanTimes in Toronto time.
+function nextScan(){
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: CFG.tz, hour:'numeric', minute:'numeric', hourCycle:'h23'})
+    .formatToParts(new Date()).map(p => [p.type, p.value]));
+  const nowMin = Number(parts.hour) * 60 + Number(parts.minute);
+  const slot = CFG.scanTimes.find(([h, m]) => h * 60 + m > nowMin);
+  const [h, m] = slot || CFG.scanTimes[0];
+  const label = `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
+  return (slot ? '' : 'tomorrow ') + label + ' (Toronto)';
+}
+const byPill = by => by === 'manual' ? '<span class="pill plum">By you</span>' : by === 'agent' ? '<span class="pill accent">By agent</span>' : '';
 function salary(j){
   if(!j.salary_min && !j.salary_max) return '';
   const k = n => n >= 1000 ? Math.round(n/1000) + 'k' : n;
@@ -350,6 +372,8 @@ select json_build_object(
     'shortlisted', (select count(*) from jobs.jobs where status = 'shortlisted'),
     'applied', (select count(*) from jobs.applications where submitted_at is not null),
     'applied_week', (select count(*) from jobs.applications where submitted_at >= now() - interval '7 days'),
+    'applied_agent', (select count(*) from jobs.applications where submitted_at is not null and applied_by = 'agent'),
+    'applied_manual', (select count(*) from jobs.applications where submitted_at is not null and applied_by = 'manual'),
     'responses', (select count(*) from jobs.applications where status in ('acknowledged','screening','interview','offer','accepted','rejected')),
     'talking', (select count(*) from jobs.applications where status in ('screening','interview','offer','accepted')),
     'interviews', (select count(*) from jobs.applications where status in ('interview','offer','accepted')
@@ -361,13 +385,16 @@ select json_build_object(
               'a', (select count(*) from jobs.applications where submitted_at::date = d::date)) order by d)
             from generate_series(current_date - 13, current_date, interval '1 day') d),
   'apps', (select coalesce(json_agg(x order by x.updated_at desc), '[]') from (
-            select a.id, a.status, a.method, a.submitted_at, a.follow_up_at, a.next_step, a.next_step_at,
+            select a.id, a.status, a.method, a.applied_by, a.submitted_at, a.follow_up_at, a.next_step, a.next_step_at,
                    a.error, a.updated_at, a.response_summary, j.id as job_id, j.title, j.company_name, j.location, j.match_score
             from jobs.applications a join jobs.jobs j on j.id = a.job_id order by a.updated_at desc limit 300) x),
   'jobs', (select coalesce(json_agg(x order by x.created_at desc), '[]') from (
             select id, title, company_name, location, work_mode, match_score, status, found_by, created_at, source,
-                   salary_min, salary_max, salary_currency, apply_method, closes_at, times_seen
+                   salary_min, salary_max, salary_currency, apply_method, closes_at, times_seen,
+                   (select a.applied_by from jobs.applications a where a.job_id = jobs.jobs.id) as applied_by
             from jobs.jobs order by created_at desc limit 400) x),
+  'last_search', (select row_to_json(x) from (select id, started_at, finished_at, status, jobs_found, jobs_new, error, notes
+            from jobs.agent_runs where agent like 'job_finder%' order by started_at desc limit 1) x),
   'lessons', (select coalesce(json_agg(x order by x.status = 'active' desc, x.created_at desc), '[]') from (
             select id, created_at, applies_to, cause, rule, pattern, status, times_applied, created_by from jobs.lessons where status <> 'retired' or updated_at > now() - interval '30 days') x),
   'reports_pending', (select count(*) from jobs.link_reports where status = 'pending'),
@@ -395,13 +422,15 @@ async function openJob(id){
     const rows = await sql(`select row_to_json(j) as j,
       (select coalesce(json_agg(e order by e.at desc), '[]') from jobs.events e where e.job_id = j.id) as events,
       (select a.id from jobs.applications a where a.job_id = j.id) as app_id,
+      (select a.status from jobs.applications a where a.job_id = j.id) as app_status,
+      (select a.applied_by from jobs.applications a where a.job_id = j.id) as applied_by,
       (select coalesce(json_agg(json_build_object('id', r.id, 'kind', r.kind, 'at', r.reported_at, 'note', r.user_note, 'analysis', r.quick_analysis,
           'status', r.status, 'verified', r.verified_cause, 'lesson', (select row_to_json(l) from jobs.lessons l where l.id = r.lesson_id)) order by r.reported_at desc), '[]')
          from jobs.link_reports r where r.job_id = j.id) as reports
       from jobs.jobs j where j.id = ${qn(id)}`);
     const r = rows[0];
     if(!r){ S.sheet = {kind:'job', id, err:'This job no longer exists.'}; return renderSheet(); }
-    S.sheet = {kind:'job', id, job: parse(r.j), events: parse(r.events), appId: r.app_id, reports: parse(r.reports), reporting: false, reportKind: 'job_closed', analyzing: S.sheet && S.sheet.analyzing};
+    S.sheet = {kind:'job', id, job: parse(r.j), events: parse(r.events), appId: r.app_id, appStatus: r.app_status, appliedBy: r.applied_by, reports: parse(r.reports), reporting: false, reportKind: 'job_closed', analyzing: S.sheet && S.sheet.analyzing};
   } catch(e){ S.sheet = {kind:'job', id, err: errText(e)}; }
   renderSheet();
 }
@@ -458,7 +487,10 @@ function renderHeaderBits(){
   ];
   document.getElementById('tabs').innerHTML = tabs.map(([k, l, n, hot]) =>
     `<button class="tab" role="tab" type="button" data-tab="${k}" aria-selected="${S.tab === k}">${l}${n ? `<span class="n${hot ? ' hot' : ''}">${n}</span>` : ''}</button>`).join('');
-  document.getElementById('sub').textContent = S.loading ? 'Loading…' : S.loadedAt ? 'Updated ' + new Date(S.loadedAt).toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'}) : 'Finder agents → applier → you';
+  const ls = d && d.last_search;
+  document.getElementById('sub').textContent = S.loading && !d ? 'Loading…'
+    : d ? (ls ? `Last job search ${whenShort(ls.started_at)}` : 'No job search yet') + ` · next ${nextScan()}`
+    : 'Finder agents → applier → you';
   const r = document.getElementById('refresh'); r.disabled = S.loading || !S.mcp;
 }
 
@@ -484,7 +516,7 @@ function vOverview(){
   const kpis = [
     [c.found, 'Jobs found', `+${c.found_week} this week`],
     [c.shortlisted, 'Shortlisted', 'waiting for applier'],
-    [c.applied, 'Applied', `+${c.applied_week} this week`],
+    [c.applied, 'Applied', `${c.applied_agent} by agent · ${c.applied_manual} by you`],
     [c.responses, 'Heard back', rate(c.responses, c.applied)],
     [c.interviews, 'Interviews', rate(c.interviews, c.applied)],
     [c.offers, 'Offers', '']
@@ -505,7 +537,11 @@ function vOverview(){
   const fmax = Math.max(1, steps[0][1]);
   const funnel = `<div class="funnel">${steps.map(([l, n]) => `<div class="fstep"><span>${l}</span><div class="track"><div class="fill" style="width:${n*100/fmax}%"></div></div><b>${n}</b></div>`).join('')}</div>`;
 
+  const ls = d.last_search;
+  const searchCard = `<div class="card searchbar"><div><b>Job search</b> <span class="note">runs at 6:10 am, 12:10 pm and 6:10 pm (Toronto)</span></div>
+    <div class="searchmeta">${ls ? `Last run <b>${whenShort(ls.started_at)}</b> ${runPill(ls)} · ${ls.jobs_found} checked, ${ls.jobs_new} new${ls.error ? ` · <span style="color:var(--bad-fg)">${esc(ls.error)}</span>` : ''}` : 'No job search has run yet'} · next <b>${nextScan()}</b></div></div>`;
   return `<div class="grid">
+    ${searchCard}
     <div class="kpis">${kpis.map(([n, l, s]) => `<div class="kpi"><b>${n}</b><span>${l}</span>${s ? `<div><span class="rate">${esc(s)}</span></div>` : ''}</div>`).join('')}</div>
     <div class="cols">
       <div class="grid">
@@ -528,12 +564,12 @@ function vOverview(){
 }
 function appRow(a){
   return `<button class="row" type="button" data-app="${a.id}">${scoreEl(a.match_score)}<div class="main"><div class="t">${esc(a.title)}</div><div class="s">${esc(a.company_name)}${a.location ? ' · ' + esc(a.location) : ''}${a.status === 'failed' && a.error ? ' · ' + esc(a.error) : ''}</div></div>
-    <div class="end">${pill(APP_STATUS, a.status)}<span class="when">${ago(a.submitted_at || a.updated_at)}</span></div></button>`;
+    <div class="end"><span class="btnrow" style="gap:4px">${pill(APP_STATUS, a.status)}${byPill(a.applied_by)}</span><span class="when">${ago(a.submitted_at || a.updated_at)}</span></div></button>`;
 }
 function jobRow(j){
   const bits = [j.company_name, j.location, MODE[j.work_mode], salary(j)].filter(Boolean).map(esc).join(' · ');
   return `<button class="row" type="button" data-job="${j.id}">${scoreEl(j.match_score)}<div class="main"><div class="t">${esc(j.title)}</div><div class="s">${bits}</div></div>
-    <div class="end">${pill(JOB_STATUS, j.status)}<span class="when">${ago(j.created_at)}</span></div></button>`;
+    <div class="end"><span class="btnrow" style="gap:4px">${pill(JOB_STATUS, j.status)}${byPill(j.applied_by)}</span><span class="when">${ago(j.created_at)}</span></div></button>`;
 }
 function agentSummary(){
   const runs = S.data.runs;
@@ -575,7 +611,7 @@ function vApps(){
     const items = apps.filter(a => sts.includes(a.status));
     return `<section class="lane"><h3>${name} <b>${items.length}</b></h3>${items.map(a => `<button class="tile" type="button" data-app="${a.id}">
       <span class="t">${esc(a.title)}</span><span class="s">${esc(a.company_name)}${a.method ? ' · ' + esc(METHOD[a.method] || a.method) : ''}</span>
-      <span class="foot">${pill(APP_STATUS, a.status)}<span class="when mono" style="font-size:11.5px;color:var(--muted)">${ago(a.submitted_at || a.updated_at)}</span></span></button>`).join('') || '<span class="note" style="padding:4px">None</span>'}</section>`;
+      <span class="foot"><span class="btnrow" style="gap:4px">${pill(APP_STATUS, a.status)}${byPill(a.applied_by)}</span><span class="when mono" style="font-size:11.5px;color:var(--muted)">${ago(a.submitted_at || a.updated_at)}</span></span></button>`).join('') || '<span class="note" style="padding:4px">None</span>'}</section>`;
   }).join('')}</div>`;
 }
 
@@ -672,6 +708,20 @@ function reportBlock(sh){
   </div>`).join('');
   return html;
 }
+const PRE_SUBMIT = ['queued','tailoring','ready','approved','failed','withdrawn'];
+function manualForm(sh){
+  if(!sh.manual) return '';
+  const today = new Date().toLocaleDateString('en-CA', {timeZone: CFG.tz});
+  return `<div class="sec report"><h4>Record that you applied yourself</h4><div class="form">
+    <label class="field">How<select id="ma-method">
+      <option value="web_form">Company website / form</option><option value="ats">Job portal (Greenhouse, Lever, Workday…)</option>
+      <option value="easy_apply">LinkedIn Easy Apply</option><option value="email">Email</option>
+      <option value="referral">Referral</option><option value="other">Other</option></select></label>
+    <label class="field">Date<input id="ma-date" type="date" value="${today}" max="${today}"></label>
+    <label class="field full">Note (optional)<input id="ma-note" placeholder="e.g. used the tailored CV, referred by Sam"></label>
+    <div class="full btnrow"><button class="btn primary" type="button" data-act="manual-save" ${S.busy ? 'disabled' : ''}>Mark as applied</button><button class="btn" type="button" data-act="manual-cancel">Cancel</button></div>
+  </div><p class="note" style="margin:8px 0 0">The applying agent will leave this job alone, and it shows as <b>By you</b> in your applications.</p></div>`;
+}
 function reportForm(sh){
   if(!sh.reporting) return '';
   const k = sh.reportKind;
@@ -697,7 +747,10 @@ function jobSheet(sh){
       ${appId ? `<button class="btn primary" type="button" data-app="${appId}">Open application</button>` : ''}
       ${linkOut(j.url) ? `<a class="btn" href="${esc(j.url)}" target="_blank" rel="noopener">Open posting ↗</a>` : ''}
       ${!reported && !sh.reporting ? `<button class="btn danger" type="button" data-act="report-open">Link broken / job closed</button>` : ''}
+      ${(!appId || PRE_SUBMIT.includes(sh.appStatus)) && !sh.manual ? `<button class="btn" type="button" data-act="manual-open">I applied myself</button>` : ''}
+      ${sh.appliedBy ? byPill(sh.appliedBy) : ''}
     </div>
+    ${manualForm(sh)}
     ${reportForm(sh)}
     ${reportBlock(sh)}
     ${can && !sh.reporting ? `<label class="field">Reason (optional, the agents learn from it)<input id="js-reason" placeholder="e.g. too junior, wrong city"></label>` : ''}
@@ -726,12 +779,14 @@ function appSheet({app: a, job: j, cv, events}){
   if(a.status === 'approved') acts.push(`<button class="btn" type="button" data-act="unapprove" ${b}>Undo approval</button>`);
   if(a.status === 'failed') acts.push(`<button class="btn primary" type="button" data-act="retry" ${b}>Retry</button>`);
   if(['queued','tailoring','ready','approved','failed'].includes(a.status)) acts.push(`<button class="btn danger" type="button" data-act="withdraw" ${b}>Withdraw</button>`);
+  if(PRE_SUBMIT.includes(a.status) && !S.sheet.manual) acts.push(`<button class="btn" type="button" data-act="manual-open">I applied myself</button>`);
   const sent = ['submitted','acknowledged','screening','interview','offer','no_response'].includes(a.status);
   const answers = Array.isArray(a.form_answers) ? a.form_answers : [];
-  return `<div><div class="btnrow" style="margin-bottom:8px">${pill(APP_STATUS, a.status)} ${scoreEl(j.match_score)}</div>
+  return `<div><div class="btnrow" style="margin-bottom:8px">${pill(APP_STATUS, a.status)} ${byPill(a.applied_by)} ${scoreEl(j.match_score)}</div>
       <h2>${esc(j.title)}</h2><div class="co">${esc(j.company_name)}${j.location ? ' · ' + esc(j.location) : ''}</div></div>
     ${a.status === 'failed' && a.error ? `<div class="banner bad">${esc(a.error)}</div>` : ''}
     ${acts.length ? `<div class="btnrow">${acts.join('')}</div>` : ''}
+    ${manualForm(S.sheet)}
     ${a.status === 'ready' ? `<label class="field">Note for the applier (used with Send back)<textarea id="as-note" rows="2" placeholder="e.g. lead with the Shopify project, shorten the cover letter"></textarea></label>` : ''}
     ${sent ? `<div class="sec"><h4>Record the employer's answer</h4><div class="form">
         <label class="field">New status<select id="as-out">${OUTCOMES.map(s => `<option value="${s}"${s === a.status ? ' selected' : ''}>${APP_STATUS[s][0]}</option>`).join('')}</select></label>
@@ -741,6 +796,7 @@ function appSheet({app: a, job: j, cv, events}){
         <div class="full btnrow"><button class="btn primary" type="button" data-act="outcome" ${b}>Save</button><button class="btn danger" type="button" data-act="withdraw" ${b}>Withdraw</button></div>
       </div></div>` : ''}
     <div class="sec"><h4>Submission</h4><dl class="kv">
+      ${a.applied_by ? `<dt>Applied by</dt><dd>${a.applied_by === 'manual' ? 'You, yourself' : 'The applying agent, automatically'}</dd>` : ''}
       <dt>Method</dt><dd>${esc(METHOD[a.method] || a.method || 'Not chosen yet')}</dd>
       ${a.email_to ? `<dt>To</dt><dd>${esc(a.email_to)}</dd>` : ''}
       ${a.form_url ? `<dt>Form</dt><dd>${linkOut(a.form_url, 'Open form ↗')}</dd>` : ''}
@@ -852,6 +908,14 @@ document.addEventListener('click', e => {
     case 'retry':     return setAppStatus(sh.id, 'approved', 'Retry requested', '', 'Queued for another try');
     case 'withdraw':  return setAppStatus(sh.id, 'withdrawn', null, '', 'Withdrawn');
     case 'report-open':   sh.reporting = true; return renderSheet();
+    case 'manual-open':   sh.manual = true; return renderSheet();
+    case 'manual-cancel': sh.manual = false; return renderSheet();
+    case 'manual-save': {
+      const jobId = sh.kind === 'job' ? sh.id : sh.job.id, date = val('ma-date');
+      const at = date ? new Date(date + 'T12:00:00').toISOString() : null;
+      return write(`select jobs.mark_applied_manually(${qn(jobId)}, ${q(val('ma-method'))}, ${at ? q(at) + '::timestamptz' : 'now()'}, ${q(val('ma-note'))});`,
+        'Marked as applied by you', sh.kind === 'job' ? () => openJob(jobId) : () => openApp(sh.id));
+    }
     case 'report-cancel': sh.reporting = false; return renderSheet();
     case 'report':    return reportJob(sh, val('rp-note'));
     case 'analyze':   return analyzeReport(sh.id, Number(t.dataset.rid));

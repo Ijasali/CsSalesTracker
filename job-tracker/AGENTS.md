@@ -111,4 +111,5 @@ Never submit an application whose status is not returned by `jobs.ready_to_submi
 | Application → Retry | `failed` → `approved` |
 | Application → Record outcome | status (`screening`, `interview`, `offer`, …), `next_step`, `next_step_at`, note |
 | Application → Withdraw | `withdrawn` |
+| Job or application → I applied myself | `jobs.mark_applied_manually(job_id, method, date, note)`: application `submitted`, `applied_by = 'manual'`; the applier then skips the job |
 | Profile → Save | `jobs.profile` |
