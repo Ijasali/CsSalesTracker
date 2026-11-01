@@ -366,8 +366,8 @@ const Q_ALL = `
 select json_build_object(
   'profile', (select row_to_json(p) from jobs.profile p where id = 1),
   'counts', json_build_object(
-    'found', (select count(*) from jobs.jobs),
-    'found_week', (select count(*) from jobs.jobs where created_at >= now() - interval '7 days'),
+    'found', (select count(*) from jobs.jobs where status <> 'expired'),
+    'found_week', (select count(*) from jobs.jobs where status <> 'expired' and created_at >= now() - interval '7 days'),
     'new', (select count(*) from jobs.jobs where status = 'new'),
     'shortlisted', (select count(*) from jobs.jobs where status = 'shortlisted'),
     'applied', (select count(*) from jobs.applications where submitted_at is not null),
@@ -381,7 +381,7 @@ select json_build_object(
     'offers', (select count(*) from jobs.applications where status in ('offer','accepted'))
   ),
   'daily', (select json_agg(json_build_object('d', d::date,
-              'f', (select count(*) from jobs.jobs where created_at::date = d::date),
+              'f', (select count(*) from jobs.jobs where status <> 'expired' and created_at::date = d::date),
               'a', (select count(*) from jobs.applications where submitted_at::date = d::date)) order by d)
             from generate_series(current_date - 13, current_date, interval '1 day') d),
   'apps', (select coalesce(json_agg(x order by x.updated_at desc), '[]') from (
@@ -392,7 +392,7 @@ select json_build_object(
             select id, title, company_name, location, work_mode, match_score, status, found_by, created_at, source,
                    salary_min, salary_max, salary_currency, apply_method, closes_at, times_seen,
                    (select a.applied_by from jobs.applications a where a.job_id = jobs.jobs.id) as applied_by
-            from jobs.jobs order by created_at desc limit 400) x),
+            from jobs.jobs where status <> 'expired' order by created_at desc limit 400) x),
   'last_search', (select row_to_json(x) from (select id, started_at, finished_at, status, jobs_found, jobs_new, error, notes
             from jobs.agent_runs where agent like 'job_finder%' order by started_at desc limit 1) x),
   'lessons', (select coalesce(json_agg(x order by x.status = 'active' desc, x.created_at desc), '[]') from (
