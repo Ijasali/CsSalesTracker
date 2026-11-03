@@ -846,7 +846,8 @@ const loadNet = () => load('net', async () => { S.netScrolled = false; S.net = a
 /* ---- category history ---- */
 function viewCat(){
   const c = S.cat; const name = topName(c.cid); const u = c.unit; const W = UNIT_WORD[u];
-  let h = `<main>${hdr(name, c.kind === 'income' ? 'Income' : 'Spending', null, true)}`;
+  const sname = c.sub ? (cat(c.sub) && cat(c.sub).pid ? cat(c.sub).name : name + ' (no subcategory)') : null;
+  let h = `<main>${hdr(sname || name, c.sub ? name : (c.kind === 'income' ? 'Income' : 'Spending'), null, true)}`;
   const tops = B().cats.filter(x => !x.pid && x.kind === c.kind).sort((a, b) => a.name.localeCompare(b.name));
   h += `<div class="chips" role="group" aria-label="Category">${tops.map(t => `<button class="chip" data-act="catsw" data-cid="${t.id}" aria-pressed="${t.id === c.cid}">${esc(t.name)}</button>`).join('')}</div>`;
   h += `<div class="seg" role="group" aria-label="Show by" style="grid-template-columns:repeat(3,minmax(0,1fr))">${[['week','Weekly'],['month','Monthly'],['year','Yearly']].map(o => `<button data-act="catunit" data-v="${o[0]}" aria-pressed="${u === o[0]}">${o[1]}</button>`).join('')}</div>`;
@@ -854,7 +855,8 @@ function viewCat(){
   if(!c.rows) return h + `<div class="skel">Loading history…</div></main>`;
   const bs = catBuckets(u);
   const tot = {}; const bySub = {};
-  for(const r of c.rows){ const m = String(r.m).slice(0, 10); tot[m] = (tot[m] || 0) + Number(r.amt); if(m === c.sel){ bySub[r.sub] = (bySub[r.sub] || 0) + Number(r.amt); } }
+  let catCur = 0;
+  for(const r of c.rows){ const m = String(r.m).slice(0, 10); if(!c.sub || r.sub === c.sub) tot[m] = (tot[m] || 0) + Number(r.amt); if(m === c.sel){ bySub[r.sub] = (bySub[r.sub] || 0) + Number(r.amt); catCur += Number(r.amt); } }
   const vals = bs.map(m => tot[m] || 0); const nAvg = Math.min(12, vals.length); const avg = vals.slice(-nAvg).reduce((a, b) => a + b, 0) / nAvg;
   const max = Math.max(1, ...vals) * 1.18; const H = 150;
   const si = bs.indexOf(c.sel); const cur = tot[c.sel] || 0; const prev = si > 0 ? vals[si - 1] : null;
@@ -864,23 +866,28 @@ function viewCat(){
     bs.map((m, i) => `<button class="col" data-act="catsel" data-m="${m}" aria-pressed="${m === c.sel}" aria-label="${esc(bucketLabel(u, m))}: ${cad(vals[i])}"><span>${vals[i] ? short$(vals[i]) : ''}</span><i style="height:${Math.max(vals[i] ? 2 : 0, Math.round(vals[i] / max * H))}px"></i></button>`).join('') +
     `</div><div class="mlab">${bs.map((m, i) => `<div class="${m === c.sel ? 'on' : ''}">${esc(bucketShort(u, m))}<small>${u !== 'year' && (i === 0 || (u === 'month' ? m.slice(5, 7) === '01' : m.slice(0, 4) !== bs[i - 1].slice(0, 4))) ? m.slice(0, 4) : ''}</small></div>`).join('')}</div></div></div>
     <div class="row xs muted" style="padding:0 16px"><span aria-hidden="true" style="width:18px;border-top:1.5px dashed var(--avg)"></span><span>${nAvg}-${W} average ${cad(avg)}</span></div></section>`;
-  const subs = Object.entries(bySub).sort((a, b) => b[1] - a[1]);
-  if(subs.length > 1 || (subs.length === 1 && cat(subs[0][0]) && cat(subs[0][0]).pid))
-    h += `<section class="card tight"><div class="row sp" style="padding:10px 0 6px"><span class="sm b">Subcategories</span><span class="xs muted">tap to see only those</span></div><div class="list">` +
-      subs.map(([sid, v]) => { const sc = cat(sid); const label = sc && sc.pid ? sc.name : 'General'; const on = c.sub === sid;
-        return `<button class="item" data-act="catsub" data-id="${sid}" aria-pressed="${on}" style="min-height:48px${on ? ';background:var(--accent-soft);border-radius:10px;padding-left:8px;padding-right:8px' : ''}"><span class="pct">${cur ? Math.round(v / cur * 100) : 0}%</span><span class="grow sb" style="font-size:15px;text-align:left">${esc(label)}</span><span class="amt" style="font-size:15px">${cad(v)}</span></button>`; }).join('') + `</div></section>`;
+  // Every subcategory, like Money Manager: the ones with nothing this period show $0.00. Tap one to see only it.
+  const allSubs = B().cats.filter(x => x.pid === c.cid);
+  if(allSubs.length){
+    const items = allSubs.map(x => [x.id, bySub[x.id] || 0, x.name]);
+    if(bySub[c.cid]) items.push([c.cid, bySub[c.cid], 'No subcategory']);
+    items.sort((a, b) => (b[1] - a[1]) || a[2].localeCompare(b[2]));
+    h += `<section class="card tight"><button class="item" data-act="catsub" data-id="" aria-pressed="${!c.sub}" style="min-height:48px"><span class="grow sb muted" style="text-align:left">${esc(name)}</span><span class="amt b">${cad(catCur)}</span></button><div class="list">` +
+      items.map(([sid, v, label]) => { const on = c.sub === sid;
+        return `<button class="item" data-act="catsub" data-id="${sid}" aria-pressed="${on}" style="min-height:48px${on ? ';background:var(--accent-soft);border-radius:10px;padding-left:8px;padding-right:8px' : ''}"><span class="pct">${catCur ? Math.round(v / catCur * 100) : 0}%</span><span class="grow sb" style="font-size:15px;text-align:left">${esc(label)}</span><span class="amt" style="font-size:15px${v ? '' : ';color:var(--muted)'}">${cad(v)}</span></button>`; }).join('') + `</div></section>`;
+  }
   const dstyle = v => c.kind === 'income' ? (v >= 0 ? 'pos' : 'neg') : (v > 0 ? 'neg' : 'pos');
   h += `<section class="tiles" style="gap:8px"><div class="mtile"><span class="k">Total</span><span class="v">${cad(cur)}</span></div>
     <div class="mtile"><span class="k">vs ${W} before</span><span class="v ${prev == null ? '' : dstyle(cur - prev)}">${prev == null ? '—' : cadS(cur - prev)}</span>${prev ? `<span class="xs muted">${(cur - prev >= 0 ? '+' : '−') + Math.abs((cur - prev) / prev * 100).toFixed(1)}%</span>` : ''}</div>
     <div class="mtile"><span class="k">vs ${nAvg}-${W} avg</span><span class="v ${dstyle(cur - avg)}">${cadS(cur - avg)}</span></div></section>`;
-  if(c.kind === 'expense' && u === 'month'){
+  if(c.kind === 'expense' && u === 'month' && !c.sub){
     const md = S.monthData[c.sel] || S.monthData[S.month]; const b = md && (md.budgets || []).find(x => x.cid === c.cid);
     if(b){ const left = Number(b.amount) - cur; h += `<button class="card row sp" data-act="tab" data-v="budgets" style="border:0;flex-direction:row;cursor:pointer;color:inherit;padding:14px 16px"><span class="b sm">Budget ${cad(b.amount)}</span><span class="b sm ${left >= 0 ? 'pos' : 'neg'}">${left >= 0 ? cad(left) + ' left' : cad(-left) + ' over'}</span></button>`; }
   }
   // The transactions behind the selected bar, by day, like Money Manager.
   const list = c.tx && (c.sub ? c.tx.filter(t => t.cid === c.sub) : c.tx);
   if(!list) return h + `<div class="skel">Loading transactions…</div></main>`;
-  if(c.sub) h += `<div class="row sp"><span class="sm b">Only ${esc(cat(c.sub) && cat(c.sub).pid ? cat(c.sub).name : 'General')}</span><button class="link" data-act="catsub" data-id="${c.sub}">Show all</button></div>`;
+  if(c.sub) h += `<div class="row sp"><span class="sm b">${esc(sname)} only</span><button class="link" data-act="catsub" data-id="">Show all of ${esc(name)}</button></div>`;
   if(!list.length) return h + `<div class="skel">Nothing recorded in ${esc(bucketLabel(u, c.sel))}.</div></main>`;
   const days = {}; list.forEach(t => { (days[t.d] = days[t.d] || []).push(t); });
   const sign = c.kind === 'income' ? 1 : -1;
@@ -1376,7 +1383,7 @@ document.addEventListener('click', e => {
     case 'catsw': S.cat.cid = el.dataset.cid; S.cat.sub = null; S.cat.rows = null; S.cat.tx = null; S.cat.scrolled = false; render(); loadCat(); break;
     case 'catsel': if(S.cat.sel !== el.dataset.m){ S.cat.sel = el.dataset.m; S.cat.tx = null; if(S.cat.unit === 'month' && !S.monthData[S.cat.sel]) loadMonth(S.cat.sel); render(); loadCatTx(); } break;
     case 'catm': { const bs = catBuckets(S.cat.unit); const i = bs.indexOf(S.cat.sel) + (+el.dataset.d); if(bs[i]){ S.cat.sel = bs[i]; S.cat.tx = null; S.cat.scrolled = false; if(S.cat.unit === 'month' && !S.monthData[S.cat.sel]) loadMonth(S.cat.sel); render(); loadCatTx(); } break; }
-    case 'catsub': S.cat.sub = S.cat.sub === el.dataset.id ? null : el.dataset.id; render(); break;
+    case 'catsub': { const id = el.dataset.id || null; S.cat.sub = S.cat.sub === id ? null : id; S.cat.scrolled = false; render(); break; }
     case 'catunit': { const c = S.cat; const u = el.dataset.v; if(u !== c.unit){ const t = todayISO(); const ref = t >= c.sel && t <= bucketEnd(c.unit, c.sel) ? t : c.sel; c.unit = u; c.sel = u === 'week' ? weekStart(ref) : (u === 'year' ? ref.slice(0, 4) + '-01-01' : monthOf(ref)); if(!catBuckets(u).includes(c.sel)) c.sel = catBuckets(u).slice(-1)[0]; c.rows = null; c.tx = null; c.scrolled = false; render(); loadCat(); } break; }
     case 'alltx': openTxns(S.view === 'txns' && S.txBreak ? {txMonth: S.txMonth} : undefined); break;
     case 'breakdown': openTxns({txBreak: el.dataset.v}); break;
